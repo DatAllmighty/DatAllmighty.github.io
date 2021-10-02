@@ -1,0 +1,166 @@
+<html lang="en">
+<head>
+    <title>Portfolio - Graphics</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <link rel="stylesheet" href="css/default.css"></rel>
+    <link rel="stylesheet" href="css/index.css"></rel>
+    <link rel="stylesheet" href="https://pro.fontawesome.com/releases/v5.10.0/css/all.css" integrity="sha384-AYmEC3Yw5cVb3ZcuHtOA93w35dYTsvhLPVnYs9eStHfGJvOvKxVfELGroGkvsg+p" crossorigin="anonymous"/>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <button class="navbar-toggler" type="hidden" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav">
+            <li class="nav-item">
+                <a id="index" class="nav-link" href="/index.html"><i class="fas fa-info"> </i> About me</a>
+            </li>
+            <li class="nav-item">
+                <a id="graphics" class="nav-link" href="/graphics.html"><i class="fas fa-cube"> </i> Computer Graphics</a>
+            </li>
+            <li class="nav-item">
+                <a id="computervision" class="nav-link" href="/computervision.html"><i class="fas fa-eye"> </i> Computer Vision</a>
+            </li>
+            <li class="nav-item">
+                <a id="livedemos" class="nav-link" href="/livedemos.html"><i class="fas fa-draw-polygon"></i> Live demos</a>
+            </li>
+            <li class="nav-item">
+            </li>
+        </ul>
+        </div>
+    </nav>
+    <div class="intro">
+        <h1>Some of my computer graphics related personal projects.</h1>
+
+        <div class="embedded-divs">             
+            <div class="showcase-div">
+                <H3>Cascaded shadowmapping</H3>
+                <div class="description-container">
+                    <img src="gifs/CSM.gif" loop=infinite></img>
+                    <!--embed src="/pdf/CSM.pdf" type="application/pdf"  height="500px" width="90%"-->   
+
+                    <p class="description-text">
+                        In this project I implemented cascaded shadowmapping for main directional light of the scene on my engine project. 
+                        In cascaded shadowmapping view frustum is split into multiple parts (cascades) and a shadow texture is assigned to each of them.
+                        Cascade that is nearest to the camera is smallest, making it possible to render high quality shadow textures near the viewer. Size of the
+                        cascades grow exponentially further away from the viewer up until the far plane. For each cascade, orthographic projection is perfectly fitted 
+                        around the split view frustum for highest possible shadow quality for each cascade. Microsoft guide for<a href="https://docs.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps"> cascaded shadowmaps </a>
+                        was used in the implementation.
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Terrain rendering</H3>
+                <div class="description-container">
+                    <img src="gifs/terrainRendering.gif" loop=infinite></img>
+                    <!--embed src="/pdf/terrainRendering.pdf" type="application/pdf"  height="500px" width="90%" -->   
+
+                     <p class="description-text">        
+                        TODO             
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Tiled deferred rendering pipeline</H3>
+                <div class="description-container">
+                    <img src="gifs/tiledDeferredRendering.gif" loop=infinite></img>
+                    <!--embed src="/pdf/tiledDeferredRendering.pdf" type="application/pdf"  height="500px" width="90%"-->   
+
+                    <p class="description-text">
+                        TODO  
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Inverse fourier transform based simulation of water</H3>
+                <div class="description-container">
+                    <img src="gifs/water.gif" loop=infinite></img>
+                    <!--embed src="/pdf/water.pdf" type="application/pdf"  height="500px" width="90%"-->   
+                    <p class="description-text">
+                    </p>
+                </div>
+            </div> 
+        </div>
+    </div>
+
+    <div class="intro">      
+        <h1>Highlights of extra credit work from a wonderful course Computer Graphics - CS-C3100 held at Aalto University by <a href="https://users.aalto.fi/~lehtinj7/">Jaakko Lehtinen</a> - The same course I have been teaching assistant on. </h1>
+        <div class="embedded-divs">             
+
+            <div class="showcase-div">
+                <H3>Realtime rendering</H3>
+                <div class="description-container">
+                    <img src="gifs/scene.gif" loop=infinite width="100%" height="100%"></img>
+                    <p class="description-text">
+                        Sponza scene with physically based rendering, tangentspace normal maps, omnidirectional shadowmaps, environment maps, hdr tone mapping and more! Mind the gif quality.
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Mesh simplification</H3>
+                <div class="description-container">
+                    <img src="gifs/Simplification.gif" loop=infinite width="100%" height="100%"></img>
+                    <p class="description-text">
+                        Implementation of paper described by<a href="https://people.eecs.berkeley.edu/~jrs/meshpapers/GarlandHeckbert2.pdf"> Surface Simplification Using Quadric Error Metrics</a> by Michael Garland And Paul S. Heckbert.
+                        </a>
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Animation blending</H3>
+                <div class="description-container">
+                    <img src="gifs/Animation_Blend.gif" loop=infinite width="100%" height="100%"></img>
+                    <p class="description-text">
+                        Spherhical linear interpolation used for blending animation states together seamlessly and fully interactively.
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Flag simulation</H3>
+                <div class="description-container">
+                    <img src="gifs/gpuTearing.gif" loop=infinite width="100%" height="100%"></img>
+                    <p class="description-text">
+                        Simulation of a flag cloth on GPU. Force impulses can be applied and the flag can be slashed with mouse input.
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Constrained dynamics</H3>
+                <div class="description-container">
+                    <img src="gifs/lagrangeMultipliers.gif" loop=infinite width="100%" height="100%"></img>
+                    <p class="description-text">
+                        Physical simulation with constraint forces. Constraints for certain properties such as particle-to-particle distance can be set. 
+                        Physical simulation is run, constraint derivatives are calculated which are then used to calculate a force, which enforces the constraints. 
+                        Implemented method described by<a href="https://www.cs.cmu.edu/~baraff/sigcourse/slidesf.pdf"> Andrew Witkin</a>.
+                    </p>
+                </div>
+            </div>
+
+            <div class="showcase-div">
+                <H3>Inverse kinematics (Jacobian pseudoinverse)</H3>
+                <div class="description-container">
+                    <img src="gifs/IK.gif" loop=infinite width="100%" height="100%"></img>
+                    <p class="description-text">
+                        Inverse kinematics with automatic differentation. Given a target position for a node of a skeleton, the method calculates
+                        the "optimal" step taken in joint rotations towards the target. To reach the target, multiple smalls steps are taken.
+                        For each step, the Jacobian of target position for each joint angle is calculated with forward automatic differentation 
+                        (operator overload). As the resulting Jacobian matrix is rarely even, pseudo inverse is used to solve for the delta rotations 
+                        for each joint. Moore-Penrose<a href="https://en.wikipedia.org/wiki/Moore%E2%80%93Penrose_inverse"> pseudoinverse </a> can be  
+                        computed from singular value decomposition. In this implementation joints can be locked in place to limit body movement.
+                    </p>
+                </div>
+            </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
