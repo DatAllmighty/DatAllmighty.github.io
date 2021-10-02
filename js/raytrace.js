@@ -1,7 +1,5 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls'
-import { FlyControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/FlyControls'
-
 import Stats from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/libs/stats.module'
 
 var parent = document.getElementById("embedded-video-div")
