@@ -181,11 +181,11 @@ void GetIncidentIllumination(Light light, Ray r, Hit hit, out vec3 incident_inte
 
 float evalF(vec3 pos, vec3 center, float radius) {
 	float r = length(pos - center);
-	if (r > radius * 2.0) {
+	radius *= 2.0;
+	if (r > radius) {
 		return 0.0;
 	}
 	else {
-		radius *= 2.0;
 		float force = 2.0 * (pow(r, 3.0) * (1.0 / pow(radius, 3.0))) - 3.0 * (pow(r, 2.0) * (1.0 / pow(radius, 2.0))) + 1.0;
 		return force;
 	}
@@ -193,10 +193,11 @@ float evalF(vec3 pos, vec3 center, float radius) {
 
 vec3 evalN(vec3 pos, vec3 center, float radius) {
 	float r = length(pos - center);
+	radius *= 2.0;
+
 	if (r > radius * 2.0) {
 		return vec3(0);
 	}
-	radius *= 2.0;
 
 	float rec = 1.0 / (pow(pos.x - center.x, 2.0) + pow(pos.y - center.y, 2.0) + pow(pos.z - center.z, 2.0));
 	return rec * 2.f * (pos-center);
@@ -331,7 +332,6 @@ bool BlobIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
 			vec3 posb = PointAtParameter(r,b);
 			vec3 posc = PointAtParameter(r,c);
 			
-
 			for (int i = lowerLimit; i < upperLimit; i++) {
 				sum_a += evalF(posa, blobs[i].center, blobs[i].params.x);
 				sum_b += evalF(posb, blobs[i].center, blobs[i].params.x);

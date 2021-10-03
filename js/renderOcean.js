@@ -1,8 +1,7 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls'
 import Stats from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/libs/stats.module'
-
-
+import { GPUComputationRenderer } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/misc/GPUComputationRenderer.js';
 
 var parent = document.getElementById("embedded-video-div")
 
@@ -136,7 +135,7 @@ uniform sampler2D skyboxTex;
 uniform sampler2D heightTex;
 uniform sampler2D normalTex;
 uniform sampler2D diffuseTex;
-
+uniform sampler2D htTex;
 uniform float heightScale;
 uniform float gridSize;
 
@@ -600,6 +599,8 @@ void main()
 			out_col += RayTrace(r, camera_tmin, 2, h) / float(sample_c);
 		}
 		fragColor = vec4(out_col, 1.0f);
+        fragColor = vec4(texture(htTex, vUv).rgb, 1.0f);
+
         return;
 	}
     else{
@@ -607,6 +608,239 @@ void main()
     }
 }
 `;
+
+const hktComputeShader = `
+
+#include <common>
+
+uniform sampler2D H0;
+uniform sampler2D H0Conj;
+
+uniform vec2 windowSize;
+uniform vec2 waterL;
+uniform float t;
+uniform float tCycle;
+
+//const float PI = 3.1415;
+//const float G = 9.81;
+
+float W(float k) {
+	float w0 = 2.0 * 3.1415 / tCycle;
+	float w = sqrt(9.81 * k);
+	return float(int(w / w0)) * w0;
+}
+
+struct Complex {
+	float real;
+	float imag;
+};
+
+Complex convertExp(float exponent) {
+	Complex ret;
+	ret.real = cos(exponent);
+	ret.imag = sin(exponent);
+	return ret;
+}
+
+Complex add(Complex a, Complex b) {
+	Complex ret;
+	ret.real = a.real + b.real;
+	ret.imag = a.imag + b.imag;
+	return ret;
+}
+
+Complex mul(Complex a, Complex b) {
+	Complex ret;
+	ret.real = a.real * b.real - a.imag * b.imag;
+	ret.imag = a.real * b.imag + a.imag * b.real;
+	return ret;
+}
+
+Complex conjugate(Complex a) {
+	Complex ret;
+	ret.real = a.real;
+	ret.imag = a.imag;
+	return ret;
+}
+
+float alias(float x, float N)
+{
+	if (x > N / 2.0) {
+		x -= N;
+    }
+	return x;
+}
+
+void main()	{
+
+    vec2 cellSize = 1.0 / windowSize.xy;
+
+    vec2 texCoord = gl_FragCoord.xy * cellSize;
+
+    float n = alias(gl_FragCoord.x, float(windowSize.x));
+    float m = alias(gl_FragCoord.y,float(windowSize.y));
+    
+    vec2 k = 2.0 * 3.1415 * vec2(n / waterL.x, m / waterL.y);
+
+    Complex  H0Complex, H0ConjComplex;
+
+    vec2 H0Read = texture(H0, texCoord).rg;
+    
+    H0Complex.real = H0Read.r;
+    H0Complex.imag = H0Read.g;
+
+    vec2 H0ConjRead = texture(H0Conj, texCoord).rg;
+    H0ConjComplex.real = H0ConjRead.r;
+    H0ConjComplex.imag = -H0ConjRead.g;
+    float kMag = max(0.00001, length(k));
+
+    float exponent = W(kMag) * t;
+
+    Complex expH0 = convertExp(exponent);
+
+    Complex expH0Conj = convertExp(-exponent);
+
+    H0Complex = mul(H0Complex, expH0);
+    H0ConjComplex = mul(H0ConjComplex, expH0Conj);
+    H0ConjComplex.imag = H0ConjComplex.imag;
+
+    Complex complexOut = add(H0Complex, H0ConjComplex);
+
+    gl_FragColor = vec4(complexOut.real, complexOut.imag, 0.0, 1.0);
+
+}
+`;
+
+//https://stackoverflow.com/questions/25582882/javascript-math-random-normal-distribution-gaussian-bell-curve
+function randn_bm() {
+    var u = 0, v = 0;
+    while(u === 0) u = Math.random(); //Converting [0,1) to (0,1)
+    while(v === 0) v = Math.random();
+    return Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+}
+
+function phillips(A, k, wind_dir) {
+    const kAmplitude = k.length()
+    const windAmplitude = wind_dir.length()
+    const g = 9.81
+    const smallWaveFactor = 0.04
+
+    const L = Math.pow(windAmplitude, 2) / g
+
+    const kAmplitudeSq = kAmplitude * kAmplitude
+    const smallWaveDampFactor = Math.exp(-kAmplitudeSq * Math.pow(smallWaveFactor, 2))
+
+    const w = wind_dir.clone().normalize()
+    const k_dir = k.clone().normalize()
+
+    if (kAmplitude < 0.00001) {
+        return 0.0
+    }
+    const directionCoef = Math.pow((w.dot(k_dir)), 2) * smallWaveDampFactor
+    const denominator = 1.0 / Math.pow(kAmplitude, 4.0)
+    const waveHeightCoef = A * Math.exp(-1.0 / (Math.pow(kAmplitude * L, 2.0)))
+    const ret = waveHeightCoef * directionCoef * denominator
+    return ret
+}
+
+function alias(x, N)
+{
+    if (x > N / 2) {
+        x -= N
+    }
+    return x
+}
+
+const isqrt2 = 1.0 / Math.sqrt(2.0)
+const waterN = 256
+const waterM = 256
+const waterA = 4.0
+var waterL = new THREE.Vector2(1000.0, 1000.0)
+var waterWindDir = new THREE.Vector2(21, 0)
+var H0 = []
+var H0Conj = []
+
+for (var j = 0; j < waterN; j++) {
+    for (var i = 0; i < waterM; i++) {
+        var n = alias(i, waterN)
+        var m = alias(j, waterM)
+        var k = new THREE.Vector2(n / waterL.x, m / waterL.y)
+        k = (k).multiplyScalar(2.0 * Math.PI)    
+        var p = phillips(waterA, k, waterWindDir)
+        var e_r = isqrt2 * randn_bm() * Math.sqrt(p)
+        var e_i = isqrt2 * randn_bm() * Math.sqrt(p)
+        H0.push(e_r)
+        H0.push(e_i)
+        p = phillips(waterA, k.multiplyScalar(-1), waterWindDir)
+        e_r = isqrt2 * randn_bm() * Math.sqrt(p)
+        e_i = isqrt2 * randn_bm() * Math.sqrt(p)
+        H0Conj.push(e_r)
+        H0Conj.push(e_i)
+    }
+}
+
+const size = waterN * waterM;
+const windowSize = new THREE.Vector2(waterN, waterM);
+
+const data1 = new Float32Array(4 * size);
+const data2 = new Float32Array(4 * size);
+const data3 = new Float32Array(4 * size);
+
+var index = 0;
+for ( let i = 0; i < size; i = i + 2 ) {
+    data1[index] = H0[i]
+    data1[index + 1] = H0[i + 1]
+    data1[index + 2] = 0;
+    data1[index + 3] = 0;
+
+    data2[index] = H0Conj[i]
+    data2[index + 1] = H0Conj[i + 1]
+    data2[index + 2] = 0
+    data2[index + 3] = 0
+
+    data3[index]  = 0
+    data3[index + 1]  = 0
+    data3[index + 2]  = 0
+    data3[index + 3]  = 0
+
+    index = index + 4;
+}
+
+function fillTexture( texture, waterN, waterM, data) {
+    const pixels = texture.image.data;
+
+    let p = 0;
+    for ( let j = 0; j < 4 * (waterN * waterM); j ++ ) {
+        pixels[ j ] = data[j]
+    }
+ 
+}
+
+var gpuCompute = new GPUComputationRenderer( waterN, waterM, renderer );
+
+const H0Tex = gpuCompute.createTexture();
+const H0ConjTex = gpuCompute.createTexture();
+const HtTex = gpuCompute.createTexture();
+
+fillTexture(H0Tex, waterN, waterM, data1);
+fillTexture(H0ConjTex, waterN, waterM, data2);
+fillTexture(HtTex, waterN, waterM, data3);
+
+const hktVariable = gpuCompute.addVariable( "hkt", hktComputeShader, HtTex );
+
+gpuCompute.setVariableDependencies( hktVariable, [ hktVariable ] );
+
+hktVariable.material.uniforms[ "windowSize" ] = { value: windowSize };
+hktVariable.material.uniforms[ "waterL" ] = { value: waterL };
+hktVariable.material.uniforms[ "H0" ] = { value: H0Tex };
+hktVariable.material.uniforms[ "H0Conj" ] = { value: H0ConjTex };
+hktVariable.material.uniforms[ "t" ] = { value: 0 };
+hktVariable.material.uniforms[ "tCycle" ] = { value: 20.0 };
+
+const error = gpuCompute.init();
+if ( error !== null ) {
+    console.error( error );
+}
 
 //Variables used in rendering
 var cameraDir = new THREE.Vector3();
@@ -658,6 +892,7 @@ const uniforms = {
     heightTex : {type: 't', value: null},
 	normalTex : {type: 't', value: null},
 	diffuseTex : {type: 't', value: null},
+	htTex : {type: 't', value: null},
 
     iResolution:  { value: new THREE.Vector2() },
     
@@ -718,7 +953,7 @@ const uniforms = {
     },
     
     sphere_count : {
-        value : 0
+        value : spheresArray.length
     },
 
     has_skybox : {
@@ -783,6 +1018,7 @@ uniforms.skyboxTex.value = skyboxTexture
 uniforms.heightTex.value = heightTexture
 uniforms.normalTex.value = normalTexture
 uniforms.diffuseTex.value = diffuseTexture
+uniforms.htTex.value = HtTex;
 
 //Fullscreen quad for rendering
 var quad = new THREE.Mesh(
@@ -819,7 +1055,13 @@ function animate(time) {
 	render(delta)
 }
 
+var tCumul = 0.0;
 function render(time) {
+    tCumul += time;
+    //Compute 
+    hktVariable.material.uniforms["t"].value  = tCumul;
+    gpuCompute.compute();
+
     const canvas = renderer.domElement
     uniforms.iResolution.value.set(canvas.width, canvas.height)
 
@@ -840,6 +1082,7 @@ function render(time) {
     uniforms.camera_horizontal.value = cameraHorizontal
     uniforms.camera_center.value = cameraPos
 	uniforms.camera_up.value = cameraUp
+    uniforms.htTex.value = gpuCompute.getCurrentRenderTarget( hktVariable ).texture;
 
     renderer.render(scene, renderCamera)
 }
