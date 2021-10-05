@@ -2,49 +2,69 @@ import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls'
 import Stats from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/libs/stats.module'
 
+//Parent div
+const parent = document.getElementById("embedded-video-div")
 
+//Camera Parameters
+let cameraDir = new THREE.Vector3();
+let cameraPos = new THREE.Vector3();
+let cameraUp = new THREE.Vector3();
+let cameraHorizontal = new THREE.Vector3(cameraDir.x, cameraDir.y, cameraDir.z)
 
-var parent = document.getElementById("embedded-video-div")
+let cameraLookAtVector = new THREE.Vector3(0,-5,10)
+let rotAngle = Math.PI - Math.PI/4;0
+let rotSpeed = 0.1
+let rotMat = new THREE.Matrix4()
 
-//Create rendering context
-const renderer = new THREE.WebGLRenderer()
-renderer.outputEncoding = THREE.sRGBEncoding
-renderer.setSize(parent.clientWidth, parent.clientHeight)
-parent.appendChild(renderer.domElement)
-const stats = Stats()
-parent.appendChild(stats.dom)
+//Terrain parameters
+var terrainHeightScale = 25
+let skyboxTexture, heightTexture, normalTexture, diffuseTexture
 
-//Create camera & controls, forced render camera for screenspace quad
-const terrainHeightScale = 25;
-const camera = new THREE.PerspectiveCamera(
-    75,
-    parent.clientWidth / parent.clientHeight,
-    0.01,
-    1000
-)
-camera.position.y =  16.55
-camera.position.z = 3
-camera.position.x = 6.6
+//Other scene & control parameters
+let camera, renderCamera, renderer, stats, scene, quad, controls, clock, uniforms;
 
-const renderCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 1 )
-var controls = new OrbitControls( camera, parent )
-controls.enabled = false;
+const materialsArray = []
+const lightsArray = []
 
-var clock = new THREE.Clock();
+function initRendering() {
 
-
-//Set resize callbacks
-window.addEventListener('resize', onWindowResize, false)
-function onWindowResize() {
-    camera.aspect = parent.clientWidth / parent.clientHeight
-    camera.updateProjectionMatrix()
+    //Create rendering context
+    renderer = new THREE.WebGLRenderer()
+    renderer.outputEncoding = THREE.sRGBEncoding
     renderer.setSize(parent.clientWidth, parent.clientHeight)
+    parent.appendChild(renderer.domElement)
+    stats = Stats()
+    parent.appendChild(stats.dom)
+
+    //Create camera & controls, "forced" orthographic render camera for screenspace quad
+    camera = new THREE.PerspectiveCamera(
+        75,
+        parent.clientWidth / parent.clientHeight,
+        0.01,
+        1000
+    )
+
+	camera.position.y = 16.55
+	camera.position.z = 3
+	camera.position.x = 6.6
+
+    renderCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 1 )
+    controls = new OrbitControls( camera, parent )
+    controls.enabled = false;
+    clock = new THREE.Clock();
+
+    //Set resize callbacks
+    window.addEventListener('resize', onWindowResize, false)
+    function onWindowResize() {
+        camera.aspect = parent.clientWidth / parent.clientHeight
+        camera.updateProjectionMatrix()
+        renderer.setSize(parent.clientWidth, parent.clientHeight)
 }
 
-
 //Create scene
-const scene = new THREE.Scene()
+scene = new THREE.Scene()
 scene.add(new THREE.AxesHelper(5))
+}
 
 //Shaders
 const vertexShader = `
@@ -55,6 +75,8 @@ const vertexShader = `
     }
 `
 const fragmentShader = `
+
+#define PI 3.141592
 #define FLT_MAX 3.402823466e+38F   
 #define ACCURACY_THRESH 0.01
 
@@ -79,16 +101,8 @@ struct Material
 	vec3 specular_color;
 	vec3 reflective_color;
 	vec3 transparent_color;
-	vec3 params;
-};
-
-//params (radius, null null)
-//params_i (material, transform, null)
-struct Sphere
-{
-	vec3 center;
-	vec3 params;
-	vec3 params_i;
+	//Fresnel, roughness, metalness
+    vec3 params;
 };
 
 //params_i (material, transform, null)
@@ -99,14 +113,11 @@ struct Box
 	vec3 params_i;
 };
 
-
 struct SkyboxParams {
     vec3 vmin_s;
 	vec3 vmax_s;
 	vec3 params_i_s;
 };
-
-uniform Sphere spheres[1];
 
 uniform Material materials[1];
 
@@ -121,13 +132,12 @@ uniform vec3 camera_direction;
 uniform vec3 camera_up;
 uniform vec3 camera_horizontal;
 
-uniform vec2 iResolution;
+uniform vec2 windowSize;
 
 uniform float camera_fov;
 uniform float camera_tmin;
 
 uniform int light_count;
-uniform int sphere_count;
 uniform int	has_skybox;
 
 uniform int	samples;
@@ -157,6 +167,51 @@ vec3 PointAtParameter(Ray r, float t) {
 	return r.origin + r.direction * t;
 }
 
+
+//https://learnopengl.com/PBR/Theory
+float DistributionGGX(vec3 N, vec3 H, float a)
+{
+    float a2     = a*a;
+    float NdotH  = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+	
+    float nom    = a2;
+    float denom  = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom        = PI * denom * denom;
+	
+    return nom / denom;
+}
+
+float GeometrySchlickGGX(float NdotV, float k)
+{
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+	
+    return nom / denom;
+}
+  
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float k)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx1 = GeometrySchlickGGX(NdotV, k);
+    float ggx2 = GeometrySchlickGGX(NdotL, k);
+	
+    return ggx1 * ggx2;
+}
+
+float FresnelSchlick(vec3 L, vec3 H, float ni) {
+    const float n1 = 1.0;
+    float n2 = ni;
+    float n = n1 / n2;
+    float dot = dot(L, H);
+    float n_s = pow(n, 2.0);
+    float B = sqrt((1.0 / n_s) + pow(dot, 2.0) - 1.0);
+    float Rs = pow((dot - B) / (dot + B), 2.0);
+    float Rp = pow((n_s * B - dot) / (n_s * B + dot), 2.0);
+    return 0.5 * (Rs + Rp);
+}
+
 void GetIncidentIllumination(Light light, Ray r, Hit hit, out vec3 incident_intensity, out vec3 dir_to_light, out float distance) {
 	//Directional light
 	if (light.params.x < 0.1) {
@@ -171,43 +226,6 @@ void GetIncidentIllumination(Light light, Ray r, Hit hit, out vec3 incident_inte
 		dir_to_light = pp/distance;
 	}
 }
-
-bool SphereIntersection(Sphere sp, Ray r, float tmin, inout Hit hit) {
-
-	vec3 tmp = sp.center - r.origin;
-	vec3 dir = r.direction;
-	float radius = sp.params.x;
-	float A = dot(dir, dir);
-	float B = -2.0 * dot(dir, tmp);
-	float C = dot(tmp, tmp) -  radius * radius;
-	float radical = B * B - 4.0 * A * C;
-	if (radical < 0.0f) {
-		return false;
-	}
-
-	radical = sqrt(radical);
-	float t_m = (-B - radical) / (2.0 * A);
-	float t_p = (-B + radical) / (2.0 * A);
-	vec3 pt_m = PointAtParameter(r, t_m);
-	vec3 pt_p = PointAtParameter(r, t_p);
-
-	bool flag = t_m <= t_p;
-	if (!flag) {
-		return false;
-	}
-	// choose the closest hit in front of tmin
-	float t = (t_m < tmin) ? t_p : t_m;
-
-	if (hit.t > t && t > tmin) {
-		vec3 normal = normalize(PointAtParameter(r, t) - sp.center);
-		hit.t = t;
-		hit.material = int(sp.params_i.x);
-		hit.normal = normal;
-		return true;
-	}
-	return false;
-}
-
 
 bool BoxIntersection(Box b, Ray r, float tmin, inout Hit hit) {
 	
@@ -305,49 +323,134 @@ bool BoxIntersection(Box b, Ray r, float tmin, inout Hit hit) {
 	return true;
 }
 
+float solveForX(Ray r, float x) {
+    return (x - r.origin.x)/r.direction.x; 
+}
+
+vec2 rayToXZ(Ray r) {
+	return normalize(vec2(r.direction.x,r.direction.z));
+}
+
+//Texture space intersection
+bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, float step) {
+    float t;
+	float lastT = 0.0;
+	vec2 mag = vec2(0);
+	
+	vec2 texSpaceDir = rayToXZ(r);
+	vec2 texelSize = vec2(step) / vec2(textureSize(heightTex, 0));
+	vec2 texSpacePosition = r.origin.xz;
+	float maxIte = max(1.0 / texelSize.x, 1.0 / texelSize.y);
+    
+	int ite = 0;
+    while(ite < int(maxIte)) {
+		vec2 texCoords = ((texSpacePosition)/gridSize) * 0.5 + 0.5;
+		texCoords += mag * texSpaceDir;
+   
+		if(texCoords.x > 1.0 || texCoords.x < 0.0 || texCoords.y > 1.0 || texCoords.y < 0.0) {
+			return false;
+		}
+        
+		float sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
+		vec2 texCoordInWorld = (texCoords * 2.0 - 1.0) * gridSize;
+		//Note F(x,z) = y, x and z are on a line, so there is a direct mapping between x -> z
+		t = solveForX(r, texCoordInWorld.x);
+		vec3 p = PointAtParameter(r,t);
+        if(t > h.t) {
+            return false;
+        }
+        if(p.y < sampledHeight) {   
+			
+            for(int i = 0; i < 4; i++) {
+				float tMid = 0.5*(lastT + t);
+				p = PointAtParameter(r,tMid);
+
+				if( (p.y-sampledHeight) < -ACCURACY_THRESH ) {
+					t = tMid;
+				}
+				else if( (p.y-sampledHeight) > ACCURACY_THRESH ){
+					lastT = tMid;
+				}
+				else{
+					t = tMid;
+					break;
+				}
+			}   
+            
+            h.t = t;
+            vec3 normal = texture(normalTex, texCoords).xzy;
+            normal = normalize(normal * 2.0f - 1.0f);
+            normal.z *= -1.0f;
+            h.normal = normal;
+            h.material = 0;
+
+            mat.diffuse_color = texture(diffuseTex, texCoords).rgb;
+            mat.specular_color = texture(diffuseTex, texCoords).rgb;
+            mat.reflective_color = vec3(0.0,0.0,0.0);
+            mat.transparent_color = vec3(0.0,0.0,0.0);
+            mat.params.x = 1.51;
+            mat.params.y = 1.0;
+            mat.params.z = 0.0;
+            return true;
+        }
+		ite++;
+		mag += texelSize;
+		lastT = t;
+
+    }
+    return false;
+}
 
 bool TraceShadow(Ray r, Hit h, float tmin) {
-	//Sphere
 	bool intersection = false;
-	
-	for (int i = 0; i < sphere_count; i++) {
-		bool b = SphereIntersection(spheres[i], r, tmin, h);
-		if (b && h.t > tmin) {
-			return true;
-		}
-	}
 
-	return false;
+    return intersection;
 }
+
 
 vec3 Shade(Hit hit, Ray r, Material mat) {
 	
 	vec3 answer = mat.diffuse_color * scene_ambient_light;
+    vec3 N = hit.normal;
+    vec3 V = -r.direction;
 
-	for (int i = 0; i < light_count; i++) {
-		Light l = lights[i];
-		vec3 incident_intensity;
-		vec3 dir_to_light;
+    for (int i = 0; i < light_count; i++) {
+		Light light = lights[i];
+		vec3 I;
+		vec3 L;
 		float distance;
-		GetIncidentIllumination(l, r, hit, incident_intensity, dir_to_light, distance);
-		vec3 di = incident_intensity * clamp(dot(hit.normal, dir_to_light), 0.0f, 1.0f) * mat.diffuse_color;
-		vec3 ri = normalize(dir_to_light - 2.f * dot(dir_to_light, hit.normal) * hit.normal);
-		vec3 si = vec3(0.f, 0.f, 0.f);
-		if (dot(dir_to_light, hit.normal) > 0.0f) {
-			si = incident_intensity * mat.specular_color * pow(clamp(dot(r.direction, ri), 0.0f, 1.0f), mat.params.y);
-		}
-		vec3 origin = PointAtParameter(r, hit.t) + 0.0001f * hit.normal;
-		Ray shadow_ray = Ray(origin,dir_to_light);
+		GetIncidentIllumination(light, r, hit, I, L, distance);
+        vec3 H = normalize(V + L);
+        float NdotL = max(dot(N, L), 0.0);        
 
-		Hit shadow_hit;
-		shadow_hit.t = FLT_MAX;
-
-		bool shadow_hit_b = TraceShadow(shadow_ray, shadow_hit, 0.001f);
-		if (!shadow_hit_b) {
-			answer += (di + si);
+        float F    = FresnelSchlick(L, H, mat.params.x);
+        float NDF = DistributionGGX(N, H, mat.params.y);       
+        float G   = GeometrySmith(N, V, L, mat.params.y);   
+            
+        float numerator    = NDF * G * F;
+        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL;
+        float spec = numerator / (denominator + 1.0);
+        vec3 specular     = vec3(spec);  
+       
+        float kS = F;
+        float kD = 1.0 - kS;
+        kD *= 1.0 - mat.params.z;	
+        
+        kD = 1.0;
+		vec3 origin = PointAtParameter(r, hit.t) + 0.1f * N;
+		Ray shadowRay = Ray(origin, L);
+        
+		Hit shadowHit;
+		shadowHit.t = FLT_MAX;
+        
+		bool shadowHitB = TraceShadow(shadowRay, shadowHit, 0.01f);
+       
+		if (!shadowHitB) {
+			answer += ( kD * mat.diffuse_color + specular ) * I * NdotL;
 		}
+
 	}
-	return answer;
+    return answer;
 }
 
 vec3 GetSkyboxColor(vec3 p) {
@@ -417,84 +520,6 @@ vec3 GetSkyboxColor(vec3 p) {
 	return vec3(1.0f, 1.0f, 0.0f);
 }
 
-float solveForX(Ray r, float x) {
-    return (x - r.origin.x)/r.direction.x; 
-}
-
-vec2 rayToXZ(Ray r) {
-	return normalize(vec2(r.direction.x,r.direction.z));
-}
-
-//Texture space intersection
-bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
-    float t;
-	float lastT = 0.0;
-	vec2 mag = vec2(0);
-	float gridDivTwo = gridSize*0.5;
-	
-	vec2 texSpaceDir = rayToXZ(r);
-	vec2 texelSize = vec2(0.5) / vec2(textureSize(heightTex, 0));
-	vec2 texSpacePosition = r.origin.xz;
-	float maxIte = max(1.0 / texelSize.x, 1.0 / texelSize.y);
-	vec2 maxPoint = texSpacePosition + maxIte * texelSize * texSpaceDir;
-    
-	int ite = 0;
-    while(ite < int(maxIte)) {
-		vec2 texCoords = ((texSpacePosition)/gridSize) * 0.5 + 0.5;
-		texCoords += mag * texSpaceDir;
-   
-		if(texCoords.x > 1.0 || texCoords.x < 0.0 || texCoords.y > 1.0 || texCoords.y < 0.0) {
-			return false;
-		}
-
-		float sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
-		vec2 texCoordInWorld = (texCoords * 2.0 - 1.0) * gridSize;
-		//Note F(x,z) = y, x and z are on a line, so there is a direct mapping between x -> z
-		t = solveForX(r, texCoordInWorld.x);
-		vec3 p = PointAtParameter(r,t);
-
-        if(p.y < sampledHeight) {   
-			for(int i = 0; i < 8; i++) {
-				float tMid = 0.5*(lastT + t);
-				p = PointAtParameter(r,tMid);
-
-				if( (p.y-sampledHeight)  < -ACCURACY_THRESH) {
-					t = tMid;
-				}
-				else if( (p.y-sampledHeight)  > ACCURACY_THRESH){
-					lastT = tMid;
-				}
-				else{
-					t = tMid;
-					break;
-				}
-			}   
-			if(t < tmin) {
-				return false;
-			}
-            h.t = t;
-            vec3 normal = texture(normalTex, texCoords).xzy;
-            normal = normalize(normal * 2.0f - 1.0f);
-            normal.z *= -1.0f;
-            h.normal = normal;
-            h.material = 0;
-
-            mat.diffuse_color = texture(diffuseTex, texCoords).rgb;
-            mat.specular_color = texture(diffuseTex, texCoords).rgb;
-            mat.reflective_color = vec3(0.0,0.0,0.0);
-            mat.transparent_color = vec3(0.0,0.0,0.0);
-            mat.params.y = 8.0;
-            mat.params.z = 1.0;
-            return true;
-        }
-		ite++;
-		mag += texelSize;
-		lastT = t;
-
-    }
-    return false;
-}
-
 vec2 GetSamplePosition(int n) {
 	int m_dim = int(sqrt(float(samples)));
 	float incr = 1.0f / float(m_dim);
@@ -503,14 +528,14 @@ vec2 GetSamplePosition(int n) {
 }
 
 vec2 NormalizedPixelCoordinate(float x, float y) {
-	return vec2((x - iResolution.x * 0.5f) / (0.5f * iResolution.x), (-y + iResolution.y * 0.5f) / (0.5f * iResolution.y));
+	return vec2((x - windowSize.x * 0.5f) / (0.5f * windowSize.x), (-y + windowSize.y * 0.5f) / (0.5f * windowSize.y));
 }
 
 Ray GenerateRay(vec2 pixelCoords) {
 	Ray r;
 	r.origin = camera_center;
 	float d = 1.f / tan(camera_fov * 0.5f);
-	r.direction = normalize(camera_direction * d + (iResolution.y/iResolution.x) * pixelCoords.y * camera_up + pixelCoords.x * camera_horizontal);
+	r.direction = normalize(camera_direction * d + (windowSize.y/windowSize.x) * pixelCoords.y * camera_up + pixelCoords.x * camera_horizontal);
 	return r;
 }
 
@@ -519,46 +544,46 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
 	vec3 ref_col = vec3(1.0f, 1.0f, 1.0f);
 	vec3 trans_col = vec3(1.0f, 1.0f, 1.0f);
 	vec3 fog = vec3(0.7, 0.7, 0.7);
-	const float maxDist = 45.0;
+	const float maxDist = 55.0;
 
 	while (bounces >= 0) {
 		Material terrainMaterial;
 		terrainMaterial.params.z = -1.0;
-
 		bool intersection = false;
-
-		//Sphere
-		Hit hT;
-		hT.t = FLT_MAX;
-		bool bT = TerrainIntersection(r, tmin, hT, terrainMaterial);
-		if(bT && hT.t < hit.t) {
-			hit = hT;
-			intersection = true;
-		}	
-
+        
+        //Intersect terrain
+		Hit h;
+		h.t = FLT_MAX;
+        bool bT = TerrainIntersection(r, tmin, h, terrainMaterial, 0.5);
+        if(bT && h.t < hit.t) {
+            hit = h;
+            intersection = true;
+        }
+        else{
+            terrainMaterial.params.z = -1.0;
+        }
+ 
 		if (intersection) {
             Material mat;
-            if(terrainMaterial.params.z > 0.0) {
+            if(terrainMaterial.params.z > -0.1) {
 				mat = terrainMaterial;
 			} 
 			else {
 				mat = materials[hit.material];
 			}
-	
-			answer +=  mix(ref_col * Shade(hit, r, mat), fog,  clamp(pow(hit.t,2.0) / pow(maxDist,2.0), 0.0, 1.0));
-			ref_col *= mat.reflective_color;
 
+			answer +=  mix(ref_col * Shade(hit, r, mat), fog,  clamp(pow(hit.t,2.0) / pow(maxDist,2.0), 0.0, 1.0));          
+			ref_col *= mat.reflective_color;
+            
 			if (length(ref_col) > 0.0) {
 				vec3 ri = normalize(r.direction - 2.f * dot(r.direction, hit.normal) * hit.normal);
-				Ray r2 = Ray(PointAtParameter(r, hit.t) + 0.00001f * hit.normal, ri);
+				Ray r2 = Ray(PointAtParameter(r, hit.t) + 0.001f * hit.normal, ri);
 				r = r2;
 				hit.t = FLT_MAX;
 			}
-			
 			else {
 				break;
 			}
-			
 		}
 		else {
 			if (has_skybox == 1) {
@@ -566,13 +591,11 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
 				skybox_hit.t = FLT_MAX;
 				bool found = BoxIntersection(skybox, r, tmin, skybox_hit);
 				if (found) {
-					answer += ref_col * GetSkyboxColor(PointAtParameter(r, skybox_hit.t));
-					answer = mix(answer, fog, clamp(pow(hit.t,2.0) / pow(maxDist,2.0), 0.0, 1.0));
+					answer += mix(ref_col * GetSkyboxColor(PointAtParameter(r, skybox_hit.t)), fog,  clamp(pow(hit.t,2.0) / pow(maxDist,2.0), 0.0, 1.0));
 					return answer;
 				}
 			}
-			answer += ref_col * scene_background_color;
-			answer = mix(answer, fog,  clamp(pow(hit.t,2.0) / pow(maxDist,2.0), 0.0, 1.0));
+			answer += mix(ref_col * scene_background_color, fog,  clamp(pow(hit.t,2.0) / pow(maxDist,2.0), 0.0, 1.0));
 			return answer;
 		}
 		bounces--;
@@ -584,9 +607,9 @@ out vec4 fragColor;
 
 void main()
 {
-	vec2 pos = vUv * iResolution;
-	
-    if (pos.x < iResolution.x && pos.y < iResolution.y) {
+	vec2 pos = vUv * windowSize;
+
+    if (pos.x < windowSize.x && pos.y < windowSize.y) {
         skybox = Box(skyboxIn.vmin_s.xyz, skyboxIn.vmax_s.xyz, skyboxIn.params_i_s.xyz);
 		int sample_c = int(pow(sqrt(float(samples)), 2.0));
 		vec3 out_col = vec3(0.f, 0.0f, 0.0f);
@@ -608,220 +631,177 @@ void main()
 }
 `;
 
-//Variables used in rendering
-var cameraDir = new THREE.Vector3();
-var cameraPos = new THREE.Vector3();
-camera.getWorldDirection(cameraDir)
-camera.getWorldPosition(cameraPos)
-var cameraUp = camera.up
-var cameraHorizontal = new THREE.Vector3(cameraDir.x, cameraDir.y, cameraDir.z)
-cameraHorizontal.cross(cameraUp)
-cameraHorizontal.normalize()
 
-var spheresArray = []
-var materialsArray = []
-var lightsArray = []
+function initScene() {
 
-const light_1 = {
-    position: new THREE.Vector3(0 ,0, 5),
-    direction: new THREE.Vector3( 1, -1, 0 ),
-    intensity: new THREE.Vector3( 0.8, 0.8, 0.8 ),
-    constant_attenuation: new THREE.Vector3( 0.5, 0.5, 0.5 ),
-    linear_attenuation: new THREE.Vector3( 0.05, 0.05, 0.05 ),
-    quadratic_attenuation: new THREE.Vector3( 0.05, 0.05, 0.05 ),
-    params : new THREE.Vector3( 0, 1, 1),
+    const light_1 = {
+        position: new THREE.Vector3(0 ,0, 5),
+        direction: new THREE.Vector3( 1, -1, 1 ),
+        intensity: new THREE.Vector3( 0.5,  0.5,  0.5 ),
+        constant_attenuation: new THREE.Vector3( 0.5, 0.5, 0.5 ),
+        linear_attenuation: new THREE.Vector3( 0.05, 0.05, 0.05 ),
+        quadratic_attenuation: new THREE.Vector3( 0.05, 0.05, 0.05 ),
+        params : new THREE.Vector3( 0, 1, 1),
+    }
+    lightsArray.push(light_1)
+    
+    const material_1 = {
+        diffuse_color : new THREE.Vector3(0.0, 0, 0),
+        specular_color : new THREE.Vector3(0, 0.0, 0),
+        reflective_color : new THREE.Vector3(1.0,1.0,1.0),
+        transparent_color : new THREE.Vector3(0.0, 0.0, 0.0),
+        params : new THREE.Vector3(0, 4, 0),
+    }
+    materialsArray.push(material_1)
+    
+    //Shader uniforms
+    uniforms = {
+    
+        skyboxTex : {type: 't', value: null},
+        heightTex : {type: 't', value: null},
+        normalTex : {type: 't', value: null},
+        diffuseTex : {type: 't', value: null},
+    
+        windowSize:  { value: new THREE.Vector2() },
+        
+        lights : { 
+            value: lightsArray
+        },
+    
+        skyboxIn : { 
+            value: {
+                vmin_s : new THREE.Vector3(-30, -30, -30),
+                vmax_s : new THREE.Vector3(30, 30, 30),
+                params_i_s : new THREE.Vector3(0, -1, 0),
+            }
+        },
+        
+        materials : { 
+            value: materialsArray  
+        },
+    
+        scene_ambient_light : {
+            value : new THREE.Vector3(0.0, 0.0, 0.0),
+        },
+    
+        scene_background_color : {
+            value : new THREE.Vector3(0.1, 0.1, 0.1)
+        },
+    
+        camera_center : {
+            value : cameraPos
+        },
+    
+        camera_direction : {
+            value : cameraDir
+        },
+    
+        camera_up : {
+            value : camera.up
+        },
+    
+        camera_horizontal : {
+            value : cameraHorizontal
+        },
+        
+        camera_fov : {
+            value : 75.0/180.0 * Math.PI
+        },
+    
+        camera_tmin : {
+            value : 0.01
+        },
+    
+        light_count : {
+            value : lightsArray.length
+        },
+           
+        has_skybox : {
+            value : 1
+        },
+    
+        samples : {
+            value : 2
+        },
+    
+        heightScale : {
+            value: terrainHeightScale
+    
+        },
+
+        gridSize : {
+            value: 25
+        },
+
+    };
+    
+    skyboxTexture = new THREE.TextureLoader().load( 
+        "images/skyboxDay.png",
+    );
+    
+    heightTexture = new THREE.TextureLoader().load( 
+        "images/texturingHeight.png",
+    );
+    
+    normalTexture = new THREE.TextureLoader().load( 
+        "images/texturingNormal.png",
+    );
+    
+    diffuseTexture = new THREE.TextureLoader().load( 
+        "images/texturingDiffuse.png",
+    );
+    
+    skyboxTexture.wrapS = THREE.ClampToEdgeWrapping
+    skyboxTexture.wrapT = THREE.ClampToEdgeWrapping
+    skyboxTexture.magFilter = THREE.NearestFilter
+    skyboxTexture.minFilter = THREE.NearestFilter
+    skyboxTexture.repeat.set( 4, 4 )
+    
+    heightTexture.wrapS = THREE.ClampToEdgeWrapping
+    heightTexture.wrapT = THREE.ClampToEdgeWrapping
+    heightTexture.magFilter = THREE.LinearFilter
+    heightTexture.minFilter = THREE.LinearFilter
+    heightTexture.repeat.set( 4, 4 )
+    
+    normalTexture.wrapS = THREE.ClampToEdgeWrapping
+    normalTexture.wrapT = THREE.ClampToEdgeWrapping
+    normalTexture.magFilter = THREE.LinearFilter
+    normalTexture.minFilter = THREE.LinearFilter
+    normalTexture.repeat.set( 4, 4 )
+    
+    diffuseTexture.wrapS = THREE.ClampToEdgeWrapping
+    diffuseTexture.wrapT = THREE.ClampToEdgeWrapping
+    diffuseTexture.magFilter = THREE.LinearFilter
+    diffuseTexture.minFilter = THREE.LinearFilter
+    diffuseTexture.repeat.set( 4, 4 )
+    
+    uniforms.skyboxTex.value = skyboxTexture
+    uniforms.heightTex.value = heightTexture
+    uniforms.normalTex.value = normalTexture
+    uniforms.diffuseTex.value = diffuseTexture
+    
+    quad = new THREE.Mesh(
+        new THREE.PlaneGeometry(2, 2),
+        new THREE.ShaderMaterial({
+            vertexShader: vertexShader,
+            fragmentShader: fragmentShader,
+            uniforms,
+            glslVersion: THREE.GLSL3,
+            depthWrite: false,
+            depthTest: false,
+        })
+    );
+    scene.add(quad)
 }
 
-lightsArray.push(light_1)
-
-const sp_1 = {
-	center : camera.position.add(cameraDir.clone().multiplyScalar(3)),
-    params : new THREE.Vector3(1, 0, 0),
-    params_i : new THREE.Vector3(0, -1, 0),
-}
-spheresArray.push(sp_1);
-
-const material_1 = {
-    diffuse_color : new THREE.Vector3(0.0, 0, 0),
-    specular_color : new THREE.Vector3(0, 0.0, 0),
-    reflective_color : new THREE.Vector3(1.0,1.0,1.0),
-    transparent_color : new THREE.Vector3(0.0, 0.0, 0.0),
-    params : new THREE.Vector3(0, 4, 0),
-}
-
-materialsArray.push(material_1)
-
-//Shader uniforms
-const uniforms = {
-
-	skyboxTex : {type: 't', value: null},
-    heightTex : {type: 't', value: null},
-	normalTex : {type: 't', value: null},
-	diffuseTex : {type: 't', value: null},
-
-    iResolution:  { value: new THREE.Vector2() },
-    
-    lights : { 
-        value: lightsArray
-    },
-
-    spheres : { 
-        value: spheresArray
-    },
-    
-    skyboxIn : { 
-        value: {
-			vmin_s : new THREE.Vector3(-30, -30, -30),
-			vmax_s : new THREE.Vector3(30, 30, 30),
-			params_i_s : new THREE.Vector3(0, -1, 0),
-		}
-    },
-    
-    materials : { 
-        value: materialsArray  
-    },
-
-    scene_ambient_light : {
-        value : new THREE.Vector3(0.1, 0.1, 0.1),
-    },
-
-    scene_background_color : {
-        value : new THREE.Vector3(0.1, 0.1, 0.1)
-    },
-
-    camera_center : {
-        value : cameraPos
-    },
-
-    camera_direction : {
-        value : cameraDir
-    },
-
-    camera_up : {
-        value : camera.up
-    },
-
-    camera_horizontal : {
-        value : cameraHorizontal
-    },
-    
-    camera_fov : {
-        value : 75.0/180.0 * Math.PI
-    },
-
-    camera_tmin : {
-        value : 0.01
-    },
-
-    light_count : {
-        value : lightsArray.length
-    },
-    
-    sphere_count : {
-        value : 0
-    },
-
-    has_skybox : {
-        value : 1
-    },
-
-    samples : {
-        value : 2
-    },
-
-    heightScale : {
-        value: terrainHeightScale
-
-    },
-
-    gridSize : {
-        value: 30
-    },
-};
-
-const skyboxTexture = new THREE.TextureLoader().load( 
-	"images/skyboxDay.png",
-);
-
-const heightTexture = new THREE.TextureLoader().load( 
-	"images/texturingHeight.png",
-);
-
-const normalTexture = new THREE.TextureLoader().load( 
-	"images/texturingNormal.png",
-);
-
-const diffuseTexture = new THREE.TextureLoader().load( 
-	"images/texturingDiffuse.png",
-);
-
-skyboxTexture.wrapS = THREE.ClampToEdgeWrapping
-skyboxTexture.wrapT = THREE.ClampToEdgeWrapping
-skyboxTexture.magFilter = THREE.NearestFilter
-skyboxTexture.minFilter = THREE.NearestFilter
-skyboxTexture.repeat.set( 4, 4 )
-
-heightTexture.wrapS = THREE.ClampToEdgeWrapping
-heightTexture.wrapT = THREE.ClampToEdgeWrapping
-heightTexture.magFilter = THREE.LinearFilter
-heightTexture.minFilter = THREE.LinearFilter
-heightTexture.repeat.set( 4, 4 )
-
-normalTexture.wrapS = THREE.ClampToEdgeWrapping
-normalTexture.wrapT = THREE.ClampToEdgeWrapping
-normalTexture.magFilter = THREE.LinearFilter
-normalTexture.minFilter = THREE.LinearFilter
-normalTexture.repeat.set( 4, 4 )
-
-diffuseTexture.wrapS = THREE.ClampToEdgeWrapping
-diffuseTexture.wrapT = THREE.ClampToEdgeWrapping
-diffuseTexture.magFilter = THREE.LinearFilter
-diffuseTexture.minFilter = THREE.LinearFilter
-diffuseTexture.repeat.set( 4, 4 )
-
-uniforms.skyboxTex.value = skyboxTexture
-uniforms.heightTex.value = heightTexture
-uniforms.normalTex.value = normalTexture
-uniforms.diffuseTex.value = diffuseTexture
-
-//Fullscreen quad for rendering
-var quad = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 2),
-    new THREE.ShaderMaterial({
-        vertexShader: vertexShader,
-        fragmentShader: fragmentShader,
-        uniforms,
-        glslVersion: THREE.GLSL3,
-        depthWrite: false,
-        depthTest: false,
-    })
-  );
-scene.add(quad)
-
-var cameraLookAtVector = new THREE.Vector3(0,-5,10)
-var rotAngle = Math.PI - Math.PI/4;
-const rotSpeed = 0.1
-var rotMat = new THREE.Matrix4()
-
-function animate(time) {
-	var delta = clock.getDelta()
-	rotAngle += (delta * rotSpeed) % (2.0 * Math.PI);
+function updateCamera(delta) {
+    //Rotate camera
+    rotAngle += (delta * rotSpeed) % (2.0 * Math.PI);
 	rotMat = rotMat.makeRotationY(rotAngle)
-	var dir = cameraLookAtVector.clone().applyMatrix4(rotMat)
+	let dir = cameraLookAtVector.clone().applyMatrix4(rotMat)
 	cameraPos = camera.getWorldPosition(cameraPos)
-
-	var currentLookAtVector = cameraPos.clone().add(dir)
+	let currentLookAtVector = cameraPos.clone().add(dir)
 	controls.target = currentLookAtVector
-
-	requestAnimationFrame(animate)
-    controls.update(delta)
-	stats.update()
-	render(delta)
-}
-
-function render(time) {
-    const canvas = renderer.domElement
-    uniforms.iResolution.value.set(canvas.width, canvas.height)
 
 	//Update camera direction etc.
     cameraDir = new THREE.Vector3()
@@ -832,18 +812,40 @@ function render(time) {
 	cameraHorizontal = new THREE.Vector3(cameraDir.x, cameraDir.y, cameraDir.z)
 	cameraHorizontal.cross(camera.up)
     cameraHorizontal.normalize();
-	var cameraUp = new THREE.Vector3(cameraDir.x, cameraDir.y, cameraDir.z)
+	cameraUp = new THREE.Vector3(cameraDir.x, cameraDir.y, cameraDir.z)
 	cameraUp.cross(cameraHorizontal)
 	cameraUp.normalize();
+}
 
+//Set main shader(ray trace) uniforms
+function updateUniforms() {
+    const canvas = renderer.domElement
+    uniforms.windowSize.value.set(canvas.width, canvas.height)
 	uniforms.camera_direction.value = cameraDir
     uniforms.camera_horizontal.value = cameraHorizontal
     uniforms.camera_center.value = cameraPos
 	uniforms.camera_up.value = cameraUp
+    uniforms.heightScale.value = terrainHeightScale;
+}
 
+function animate(time) {
+    let delta = clock.getDelta()
+    requestAnimationFrame(animate)
+    updateCamera(delta);
+    controls.update(delta)
+	stats.update()
+	render(delta)
+}
+
+function render(time) {
+    updateUniforms()
+    //Raytrace
     renderer.render(scene, renderCamera)
 }
 
+//Enter render loop
+initRendering()
+initScene()
 animate()
 
 
