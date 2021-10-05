@@ -41,17 +41,23 @@
                 <p class="description-text">          
                 </p> 
                 <div id="embedded-video-div">
-                    <script type="module" src="js/raytrace.js"></script>   
+                    <script type="module" src="js/renderBlobs.js"></script>   
                 </div>
                 <p class="description-center">
-                    Raytracing metaballs from the front page.
+                    Raytracer which procedurally combines sphere materials and traces<a href="https://en.wikipedia.org/wiki/Metaballs"> metaballs</a> (Blinn's Blobs). Spheres also have collisions.
                 </p>
             </div>
             <div class="button-wrapper">
+                <button class="btn" id="island">Raytracing island</button>
                 <button class="btn" id="terrain">Raytracing terrain</button>
                 <button class="btn" id="ocean"> Raytracing ocean</button>
-                <button class="btn" id="blobs"  autofocus> Raytracing blobs</button>
+                <button class="btn" id="blobs" autofocus> Raytracing blobs</button>
             </div>
+            <script type="text/javascript">
+                document.getElementById("island").onclick = function () {
+                    location.href = "island.html"
+                }
+            </script>
             <script type="text/javascript">
                 document.getElementById("terrain").onclick = function () {
                     location.href = "terrain.html"

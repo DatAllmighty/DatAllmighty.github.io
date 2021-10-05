@@ -18,13 +18,13 @@
                 <a id="index" class="nav-link" href="/index.html"><i class="fas fa-info"> </i> About me</a>
             </li>
             <li class="nav-item">
+                <a id="livedemos" class="nav-link" href="/livedemos.html"><i class="fas fa-draw-polygon"></i> Live demos</a>
+            </li>
+            <li class="nav-item">
                 <a id="graphics" class="nav-link" href="/graphics.html"><i class="fas fa-cube"> </i> Computer Graphics</a>
             </li>
             <li class="nav-item">
                 <a id="computervision" class="nav-link" href="/computervision.html"><i class="fas fa-eye"> </i> Computer Vision</a>
-            </li>
-            <li class="nav-item">
-                <a id="livedemos" class="nav-link" href="/livedemos.html"><i class="fas fa-draw-polygon"></i> Live demos</a>
             </li>
             <li class="nav-item">
             </li>
@@ -35,37 +35,24 @@
     <div class="intro">
         <H1>Computer Vision related projects.</H1>
         
-        <div id="embedded-video-div">
-            <h4>Take a virtual tour at my home office!</h4>
-            <script type="module" src="js/renderRoom.js"></script>            
+        <div class="showcase-div">
+            <H3>Take a virtual tour at my home office!</H3>
+            <p class="description-text">          
+            </p> 
+            <div id="embedded-video-div">
+                <script type="module" src="js/renderRoom.js"></script> 
+            </div>
+            <p class="description-center">
+               This mesh has been created from multiple pointsclouds with <a href="https://en.wikipedia.org/wiki/Iterative_closest_point"> ICP-algorithm. </a>
+               The mesh that visualizes room curvature was precalculated in c++ with algorithm 
+               described in the paper by Szymon Rusinkiewicz: <a href="https://gfx.cs.princeton.edu/pubs/Rusinkiewicz_2004_ECA/curvpaper.pdf"> Estimating Curvatures and Their Derivatives on Triangle Meshes</a> 
+            </p>
         </div>
         
         <div class="button-wrapper">
             <button class="btn" id="room" autofocus>View room</button>
             <button class="btn" id="roomCurvature">View room curvature</button>
         </div>
-
-        <div class="showcase-div">
-            <H3>Room pointcloud mesh registration and conversion</H3>
-            <div class="description-container">                
-                <!--embed src="/pdf/pointcloudRegistration.pdf" type="application/pdf"  height="500px" width="90%"-->
-                <p class="description-text">
-                    TODO
-                </p>
-            </div>
-        </div>
-
-        <div class="showcase-div">
-            <H3>Mesh curvature calculation</H3>
-            <div class="description-container">
-                <!--embed src="/pdf/meshCurvature.pdf" type="application/pdf"  height="500px" width="90%"-->   
-                <p class="description-text">
-                    The mesh that visualizes room curvature was precalculated in c++ with algorithm 
-                    described in the paper by Szymon Rusinkiewicz: <a href="https://gfx.cs.princeton.edu/pubs/Rusinkiewicz_2004_ECA/curvpaper.pdf"> Estimating Curvatures and Their Derivatives on Triangle Meshes</a> 
-                </p>
-            </div>
-        </div>
-    
     </div>
  
 <div id="Pointcloud"></div>

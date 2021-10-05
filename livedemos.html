@@ -19,13 +19,13 @@
                 <a id="index" class="nav-link" href="/index.html"><i class="fas fa-info"> </i> About me</a>
             </li>
             <li class="nav-item">
+                <a id="livedemos" class="nav-link" href="/livedemos.html"><i class="fas fa-draw-polygon"></i> Live demos</a>
+            </li>
+            <li class="nav-item">
                 <a id="graphics" class="nav-link" href="/graphics.html"><i class="fas fa-cube"> </i> Computer Graphics</a>
             </li>
             <li class="nav-item">
                 <a id="computervision" class="nav-link" href="/computervision.html"><i class="fas fa-eye"> </i> Computer Vision</a>
-            </li>
-            <li class="nav-item">
-                <a id="livedemos" class="nav-link" href="/livedemos.html"><i class="fas fa-draw-polygon"></i> Live demos</a>
             </li>
             <li class="nav-item">
             </li>
@@ -35,12 +35,21 @@
 
     <div class="intro">
         <H1>Select a demo! </H1>    
-        <div class="description-container">         
+        <div class="description-container">    
+            <p class="description-center">
+                These demos require GPU-computing power, so it is advisable not to watch them with mobile phone etc.
+            </p>     
             <div class="button-wrapper">
+                <button class="btn" id="island">Raytracing island</button>
                 <button class="btn" id="terrain">Raytracing terrain</button>
                 <button class="btn" id="ocean"> Raytracing ocean</button>
-                <button class="btn" id="blobs" autofocus> Raytracing blobs</button>
+                <button class="btn" id="blobs"> Raytracing blobs</button>
             </div>
+            <script type="text/javascript">
+                document.getElementById("island").onclick = function () {
+                    location.href = "island.html"
+                }
+            </script>
             <script type="text/javascript">
                 document.getElementById("terrain").onclick = function () {
                     location.href = "terrain.html"

@@ -13,6 +13,15 @@ let cameraPos = new THREE.Vector3();
 let cameraUp = new THREE.Vector3();
 let cameraHorizontal = new THREE.Vector3(cameraDir.x, cameraDir.y, cameraDir.z)
 
+let cameraLookAtVector = new THREE.Vector3(-2.6,-0.6,-19.4)
+let rotAngle = 0.0
+let rotSpeed = 0.0
+let rotMat = new THREE.Matrix4()
+
+//Terrain parameters
+var terrainHeightScale = 7
+let skyboxTexture, heightTexture, normalTexture, diffuseTexture
+
 //Water generation parameters
 const waterHeightScale = 10
 const isqrt2 = 1.0 / Math.sqrt(2.0)
@@ -26,11 +35,11 @@ let waterGridSize = 30
 //The water is based on Jerry Tessendorf's paper: https://people.cs.clemson.edu/~jtessen/reports/papers_files/coursenotes2004.pdf
 const waterL = new THREE.Vector2(64, 64);
 var waterWindDir = new THREE.Vector2(2.5, 0)
-const size = waterN * waterM
-const windowSize = new THREE.Vector2(waterN, waterM)
-const data1 = new Float32Array(4 * size)
-const data2 = new Float32Array(4 * size)
-const data3 = new Float32Array(4 * size)
+const size = waterN * waterM;
+const windowSize = new THREE.Vector2(waterN, waterM);
+const data1 = new Float32Array(4 * size);
+const data2 = new Float32Array(4 * size);
+const data3 = new Float32Array(4 * size);
 let H0 = []
 let H0Conj = []
 let H0Tex 
@@ -41,10 +50,11 @@ let idftComputeShader, normalComputeShader
 let horisontalSumTex, waterHeightTex, waterNormalTexture
 let waterUpdateInterval = 1.0/30.0
 let lastWaterUpdateTime = 0
+let enableRefraction = false;
 
 //Other scene & control parameters
-let camera, renderCamera, renderer, stats, scene, quad, controls, clock, gpuCompute, totalTime = 0.0, uniforms
-let gui, guiOptions, waterFolder, waveFolder, skyboxTexture
+let camera, renderCamera, renderer, stats, scene, quad, controls, clock, gpuCompute, totalTime = 0.0, uniforms;
+let gui, guiOptions, windFolder, waveFolder;
 
 const materialsArray = []
 const lightsArray = []
@@ -72,10 +82,7 @@ function initRendering() {
 
     renderCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 1 )
     controls = new OrbitControls( camera, parent )
-    controls.enableZoom = false
-    controls.minPolarAngle = 0.0
-    controls.maxPolarAngle = Math.PI/2
-
+    controls.enabled = false;
     clock = new THREE.Clock();
 
     //Set resize callbacks
@@ -168,12 +175,19 @@ uniform int	has_skybox;
 uniform int	samples;
 
 uniform sampler2D skyboxTex;
+uniform sampler2D heightTex;
+uniform sampler2D normalTex;
+uniform sampler2D diffuseTex;
 uniform sampler2D waterHeightTex;
 uniform sampler2D waterNormalTex;
 
+uniform float heightScale;
 uniform float waterHeightScale;
+uniform float gridSize;
 uniform float waterGridSize;
 uniform float waterHeightOffset;
+
+uniform bool enableRefraction;
 
 Box skybox;
 
@@ -368,6 +382,138 @@ Ray refract(Ray r, vec3 p, Hit hit, float ni) {
     //Jump above the surface - modifies tmin limit
     ref.origin = ref.origin - ref.direction * 0.1;
     return ref;
+}
+
+//Texture space intersection
+bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, float step) {
+    float t;
+	float lastT = 0.0;
+	vec2 mag = vec2(0);
+	
+	vec2 texSpaceDir = rayToXZ(r);
+	vec2 texelSize = vec2(step) / vec2(textureSize(heightTex, 0));
+	vec2 texSpacePosition = r.origin.xz;
+	float maxIte = max(1.0 / texelSize.x, 1.0 / texelSize.y);
+    
+	int ite = 0;
+    while(ite < int(maxIte)) {
+		vec2 texCoords = ((texSpacePosition)/gridSize) * 0.5 + 0.5;
+		texCoords += mag * texSpaceDir;
+   
+		if(texCoords.x > 1.0 || texCoords.x < 0.0 || texCoords.y > 1.0 || texCoords.y < 0.0) {
+			return false;
+		}
+        
+		float sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
+		vec2 texCoordInWorld = (texCoords * 2.0 - 1.0) * gridSize;
+		//Note F(x,z) = y, x and z are on a line, so there is a direct mapping between x -> z
+		t = solveForX(r, texCoordInWorld.x);
+		vec3 p = PointAtParameter(r,t);
+        if(t > h.t) {
+            return false;
+        }
+        if(p.y < sampledHeight) {   
+			
+            for(int i = 0; i < 4; i++) {
+				float tMid = 0.5*(lastT + t);
+				p = PointAtParameter(r,tMid);
+
+				if( (p.y-sampledHeight) < -ACCURACY_THRESH ) {
+					t = tMid;
+				}
+				else if( (p.y-sampledHeight) > ACCURACY_THRESH ){
+					lastT = tMid;
+				}
+				else{
+					t = tMid;
+					break;
+				}
+			}   
+            
+            h.t = t;
+            vec3 normal = texture(normalTex, texCoords).xzy;
+            normal = normalize(normal * 2.0f - 1.0f);
+            normal.z *= -1.0f;
+            h.normal = normal;
+            h.material = 0;
+
+            mat.diffuse_color = texture(diffuseTex, texCoords).rgb;
+            mat.specular_color = texture(diffuseTex, texCoords).rgb;
+            mat.reflective_color = vec3(0.0,0.0,0.0);
+            mat.transparent_color = vec3(0.0,0.0,0.0);
+            mat.params.x = 1.51;
+            mat.params.y = 1.0;
+            mat.params.z = 0.0;
+            return true;
+        }
+		ite++;
+		mag += texelSize;
+		lastT = t;
+
+    }
+    return false;
+}
+
+bool TerrainIntersectionD(Ray r, float tmin, inout Hit h, inout Material mat) {
+    float t = 0.0;
+	float lastT = 0.0;
+	int maxIte = 100;
+
+	int ite = 0;
+    while(ite < maxIte) {
+        vec3 p = PointAtParameter(r,t);
+
+		vec2 texCoords = ((p.xz)/gridSize) * 0.5 + 0.5;
+   
+		if(texCoords.x > 1.0 || texCoords.x < 0.0 || texCoords.y > 1.0 || texCoords.y < 0.0) {
+			return false;
+		}
+        
+		float sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
+        float difference = abs(p.y - sampledHeight);
+
+        if(p.y < sampledHeight) {   
+			for(int i = 0; i < 10; i++) {
+				float tMid = 0.5*(lastT + t);
+				p = PointAtParameter(r,tMid);
+                texCoords = ((p.xz)/gridSize) * 0.5 + 0.5;
+                //sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
+
+                if( (p.y-sampledHeight) + ACCURACY_THRESH  < 0.0) {
+					t = tMid;
+				}
+				else if( (p.y-sampledHeight) + ACCURACY_THRESH > 0.0 ){
+					lastT = tMid;
+				}
+				else {
+					t = tMid;
+					break;
+				}
+			}   
+            if(t > h.t) {
+                return false;
+            }
+            h.t = t;
+            vec3 normal = texture(normalTex, texCoords).xzy;
+            normal = normalize(normal * 2.0f - 1.0f);
+            normal.z *= -1.0f;
+            h.normal = normal;
+            h.material = 0;
+
+            mat.diffuse_color = texture(diffuseTex, texCoords).rgb;
+            mat.specular_color = texture(diffuseTex, texCoords).rgb;
+            mat.reflective_color = vec3(0.0,0.0,0.0);
+            mat.transparent_color = vec3(0.0,0.0,0.0);
+            mat.params.x = 1.51;
+            mat.params.y = 1.0;
+            mat.params.z = 0.0;
+            return true;
+        }
+		ite++;
+		lastT = t;
+        t += difference * 0.5;
+    }
+    return false;
 }
 
 bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
@@ -590,9 +736,11 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
     Ray refR = r;
 
 	while (bounces >= 0) {
-		Material waterMaterial;
+		Material terrainMaterial, waterMaterial, refractionMaterial;
+		terrainMaterial.params.z = -1.0;
 		waterMaterial.params.z = -1.0;
 		bool intersection = false;
+        bool refractionB = false;
   
         //Intersect water
 		hW.t = FLT_MAX;
@@ -601,18 +749,56 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
 			hit = hW;
 			intersection = true;
 		}	
-      
+        
+        hRef.t = FLT_MAX;
+        vec3 waterP = PointAtParameter(r, hit.t);
+        //Fetch height of terrain at the intersected point. If it is higher -> we trace water refraction otherwise normal
+        vec2 texSpacePosition = waterP.xz;
+        vec2 texCoords = ((texSpacePosition)/gridSize) * 0.5 + 0.5;
+        float sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
+        
+        
+        if(sampledHeight < waterP.y) {
+            refR = refract(r, waterP, hit, waterMaterial.params.x);
+            refractionB = enableRefraction ? TerrainIntersection(refR, tmin, hRef, refractionMaterial, 2.0) && intersection : false;
+        }
+        
+          
+        //Intersect terrain
+        hT.t = FLT_MAX;
+        bool bT = TerrainIntersection(r, tmin, hT, terrainMaterial, 2.0);
+        if(bT && hT.t < hit.t) {
+            hit = hT;
+            intersection = true;
+            waterMaterial.params.z = -1.0;
+            refractionB = false;
+        }
+        else{
+            terrainMaterial.params.z = -1.0;
+        }
+ 
 		if (intersection) {
             Material mat;
-            if(waterMaterial.params.z > -0.1) {
+            if(terrainMaterial.params.z > -0.1) {
+				mat = terrainMaterial;
+			} 
+            else if(waterMaterial.params.z > -0.1) {
 				mat = waterMaterial;
             }
 			else {
 				mat = materials[hit.material];
 			}
-       
-            answer +=  ref_col * Shade(hit, r, mat);
-        
+	
+
+            if(refractionB) {
+                vec3 col = Shade(hit, r, mat);
+                vec3 refractedCol = Shade(hRef, refR,  refractionMaterial);
+                answer += mix(refractedCol, ref_col * col, clamp(hRef.t/maxVisibleDepth, 0.0, 1.0));
+            }
+            else {
+                answer +=  ref_col * Shade(hit, r, mat);
+            }
+
 			ref_col *= mat.reflective_color;
             
 			if (length(ref_col) > 0.0) {
@@ -1062,22 +1248,24 @@ function initScene() {
     //Create gui to modify water params
     gui = new GUI()
     guiOptions = {
-        WaterAmplitude : waterA,
+        EnableRefraction : enableRefraction,
     }
-    waterFolder = gui.addFolder('Wind direction/amplitude')
 
-    waterFolder.add(waterWindDir, 'x', -100, 100).step(0.05).onChange( function ( value ) {                    
+    windFolder = gui.addFolder('Wind direction/amplitude')
+
+    windFolder.add(waterWindDir, 'x', -100, 100).step(0.05).onChange( function ( value ) {                    
             setWaterNoiseTextures()
     } );
-    waterFolder.add(waterWindDir, 'y', -100, 100).step(0.05).onChange( function ( value ) {                    
+    windFolder.add(waterWindDir, 'y', -100, 100).step(0.05).onChange( function ( value ) {                    
             setWaterNoiseTextures()
     } );
-    waterFolder.open()
+    windFolder.open()
     waveFolder = gui.addFolder('Water')
-    waveFolder.add(guiOptions, 'WaterAmplitude', 0, 2000).step(0.05).onChange( function ( value ) {                    
-        waterA = value;
-        setWaterNoiseTextures()
+    
+    waveFolder.add(guiOptions, 'EnableRefraction', false, true).onChange( function ( value ) {                    
+        enableRefraction = value;
     } );
+
     waveFolder.open();
 
 
@@ -1105,6 +1293,9 @@ function initScene() {
     uniforms = {
     
         skyboxTex : {type: 't', value: null},
+        heightTex : {type: 't', value: null},
+        normalTex : {type: 't', value: null},
+        diffuseTex : {type: 't', value: null},
         waterHeightTex : {type: 't', value: null},
         waterNormalTex : {type: 't', value: null},
     
@@ -1169,7 +1360,12 @@ function initScene() {
         samples : {
             value : 2
         },
-
+    
+        heightScale : {
+            value: terrainHeightScale
+    
+        },
+    
         waterHeightScale : {
             value: waterHeightScale
     
@@ -1180,13 +1376,33 @@ function initScene() {
     
         },
 
+        gridSize : {
+            value: 25
+        },
+    
         waterGridSize : {
             value: 30
         },
-    };
 
+        enableRefraction : {
+            value : enableRefraction
+        }
+    };
+    
     skyboxTexture = new THREE.TextureLoader().load( 
         "images/skyboxDay.png",
+    );
+    
+    heightTexture = new THREE.TextureLoader().load( 
+        "images/monumentHeight.png",
+    );
+    
+    normalTexture = new THREE.TextureLoader().load( 
+        "images/monumentNormal.png",
+    );
+    
+    diffuseTexture = new THREE.TextureLoader().load( 
+        "images/monumentDiffuse.png",
     );
     
     skyboxTexture.wrapS = THREE.ClampToEdgeWrapping
@@ -1194,9 +1410,30 @@ function initScene() {
     skyboxTexture.magFilter = THREE.NearestFilter
     skyboxTexture.minFilter = THREE.NearestFilter
     skyboxTexture.repeat.set( 4, 4 )
-
+    
+    heightTexture.wrapS = THREE.ClampToEdgeWrapping
+    heightTexture.wrapT = THREE.ClampToEdgeWrapping
+    heightTexture.magFilter = THREE.LinearFilter
+    heightTexture.minFilter = THREE.LinearFilter
+    heightTexture.repeat.set( 4, 4 )
+    
+    normalTexture.wrapS = THREE.ClampToEdgeWrapping
+    normalTexture.wrapT = THREE.ClampToEdgeWrapping
+    normalTexture.magFilter = THREE.LinearFilter
+    normalTexture.minFilter = THREE.LinearFilter
+    normalTexture.repeat.set( 4, 4 )
+    
+    diffuseTexture.wrapS = THREE.ClampToEdgeWrapping
+    diffuseTexture.wrapT = THREE.ClampToEdgeWrapping
+    diffuseTexture.magFilter = THREE.LinearFilter
+    diffuseTexture.minFilter = THREE.LinearFilter
+    diffuseTexture.repeat.set( 4, 4 )
+    
     uniforms.skyboxTex.value = skyboxTexture
-
+    uniforms.heightTex.value = heightTexture
+    uniforms.normalTex.value = normalTexture
+    uniforms.diffuseTex.value = diffuseTexture
+    
     quad = new THREE.Mesh(
         new THREE.PlaneGeometry(2, 2),
         new THREE.ShaderMaterial({
@@ -1212,6 +1449,14 @@ function initScene() {
 }
 
 function updateCamera(delta) {
+    //Rotate camera
+    rotAngle += (delta * rotSpeed) % (2.0 * Math.PI);
+	rotMat = rotMat.makeRotationY(rotAngle)
+	let dir = cameraLookAtVector.clone().applyMatrix4(rotMat)
+	cameraPos = camera.getWorldPosition(cameraPos)
+	let currentLookAtVector = cameraPos.clone().add(dir)
+	controls.target = currentLookAtVector
+
 	//Update camera direction etc.
     cameraDir = new THREE.Vector3()
     cameraPos  = new THREE.Vector3()
@@ -1234,10 +1479,13 @@ function updateUniforms() {
     uniforms.camera_horizontal.value = cameraHorizontal
     uniforms.camera_center.value = cameraPos
 	uniforms.camera_up.value = cameraUp
+    uniforms.heightScale.value = terrainHeightScale;
     uniforms.waterHeightTex.value = waterHeightTex.texture
     uniforms.waterNormalTex.value = waterNormalTexture.texture
     uniforms.waterHeightOffset.value = waterHeightOffset
     uniforms.waterGridSize.value = waterGridSize
+    uniforms.enableRefraction.value = enableRefraction
+
 }
 
 function animate(time) {

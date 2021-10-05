@@ -34,21 +34,22 @@
 
     <div class="intro">
         <H1>Select a demo! </H1>    
-        <div class="description-container">         
+        <div class="description-container">       
             <div class="showcase-div">
-                <H3>Terrain</H3>
+                <H3>Island</H3>
                 <p class="description-text">          
                 </p> 
                 <div id="embedded-video-div">
-                    <script type="module" src="js/renderTerrain.js"></script>   
+                    <script type="module" src="js/renderIsland.js"></script>   
                 </div>
                 <p class="description-center">
-                    Terrain raytraced in texture space. Terrain textures have been generated with <a href="https://www.world-machine.com/"> World Machine.</a>
+                    Raytracing ocean water. Based on a paper by Jerry Tessendorf: <a href="https://people.cs.clemson.edu/~jtessen/reports/papers_files/coursenotes2004.pdf" > Simulating Ocean Water</a>.
+                    Test changing the wind amplitude and direction. Try to also toggle refraction on. 
                 </p>
-            </div>
+            </div>  
             <div class="button-wrapper">
-                <button class="btn" id="island">Raytracing island</button>
-                <button class="btn" id="terrain" autofocus>Raytracing terrain</button>
+                <button class="btn" id="island" autofocus>Raytracing island</button>
+                <button class="btn" id="terrain">Raytracing terrain</button>
                 <button class="btn" id="ocean"> Raytracing ocean</button>
                 <button class="btn" id="blobs"> Raytracing blobs</button>
             </div>
@@ -72,6 +73,7 @@
                     location.href = "ocean.html"
                 }
             </script>
+        </div>
 
         </div>
       

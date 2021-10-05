@@ -23,7 +23,9 @@ html {
 }
 
 .navbar{
-    background-color: #00997b !important;
+    /*background-color: #00997b !important;*/
+    background-color: rgb(212, 212, 212) !important;
+
     border: 1px solid black;
     margin: 0px !important;
 }

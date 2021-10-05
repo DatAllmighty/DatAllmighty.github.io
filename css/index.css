@@ -81,9 +81,10 @@ h4 {
 }
 
 #embedded-video-div {
+    align-self:center;
     justify-content:center;
     height: 50%;
-    width: 100%;
+    width: 70%;
 }
 
 #embedded-video-div iframe{
@@ -109,7 +110,7 @@ h4 {
     flex-direction: column;
     flex-wrap: wrap;
     border: 5px solid white;
-    background-color: #00997b;
+    background-color: rgb(212, 212, 212);
     overflow: hidden;
     position: relative;
     border-radius: 20px;

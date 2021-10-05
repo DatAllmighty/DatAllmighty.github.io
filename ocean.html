@@ -43,14 +43,21 @@
                     <script type="module" src="js/renderOcean.js"></script>   
                 </div>
                 <p class="description-center">
-                   TODO
+                   Raytracing ocean water. Based on a paper by Jerry Tessendorf: <a href="https://people.cs.clemson.edu/~jtessen/reports/papers_files/coursenotes2004.pdf" > Simulating Ocean Water</a>.
+                   Test changing the wind amplitude and direction.
                 </p>
             </div>
             <div class="button-wrapper">
+                <button class="btn" id="island">Raytracing island</button>
                 <button class="btn" id="terrain">Raytracing terrain</button>
                 <button class="btn" id="ocean" autofocus> Raytracing ocean</button>
                 <button class="btn" id="blobs"> Raytracing blobs</button>
             </div>
+            <script type="text/javascript">
+                document.getElementById("island").onclick = function () {
+                    location.href = "island.html"
+                }
+            </script>
             <script type="text/javascript">
                 document.getElementById("terrain").onclick = function () {
                     location.href = "terrain.html"
