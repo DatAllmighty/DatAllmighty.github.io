@@ -13,11 +13,6 @@ let cameraPos = new THREE.Vector3();
 let cameraUp = new THREE.Vector3();
 let cameraHorizontal = new THREE.Vector3(cameraDir.x, cameraDir.y, cameraDir.z)
 
-let cameraLookAtVector = new THREE.Vector3(-2.6,-0.6,-19.4)
-let rotAngle = 0.0
-let rotSpeed = 0.0
-let rotMat = new THREE.Matrix4()
-
 //Terrain parameters
 var terrainHeightScale = 7
 let skyboxTexture, heightTexture, normalTexture, diffuseTexture
@@ -82,7 +77,11 @@ function initRendering() {
 
     renderCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 1 )
     controls = new OrbitControls( camera, parent )
-    controls.enabled = false;
+    controls.enableZoom = false
+    controls.minPolarAngle = 0.8
+    controls.maxPolarAngle = Math.PI/2 - 0.25
+    controls.minAzimuthAngle = 0.1
+    controls.maxAzimuthAngle = Math.PI - 0.1
     clock = new THREE.Clock();
 
     //Set resize callbacks
@@ -239,7 +238,7 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float k)
     return ggx1 * ggx2;
 }
 
-float FresnelSchlick(vec3 L, vec3 H, float ni) {
+float Fresnel(vec3 L, vec3 H, float ni) {
     const float n1 = 1.0;
     float n2 = ni;
     float n = n1 / n2;
@@ -546,7 +545,7 @@ vec3 Shade(Hit hit, Ray r, Material mat) {
         vec3 H = normalize(V + L);
         float NdotL = max(dot(N, L), 0.0);        
 
-        float F    = FresnelSchlick(L, H, mat.params.x);
+        float F    = Fresnel(L, H, mat.params.x);
         float NDF = DistributionGGX(N, H, mat.params.y);       
         float G   = GeometrySmith(N, V, L, mat.params.y);   
             
@@ -1387,14 +1386,6 @@ function initScene() {
 }
 
 function updateCamera(delta) {
-    //Rotate camera
-    rotAngle += (delta * rotSpeed) % (2.0 * Math.PI);
-	rotMat = rotMat.makeRotationY(rotAngle)
-	let dir = cameraLookAtVector.clone().applyMatrix4(rotMat)
-	cameraPos = camera.getWorldPosition(cameraPos)
-	let currentLookAtVector = cameraPos.clone().add(dir)
-	controls.target = currentLookAtVector
-
 	//Update camera direction etc.
     cameraDir = new THREE.Vector3()
     cameraPos  = new THREE.Vector3()

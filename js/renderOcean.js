@@ -225,7 +225,7 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float k)
     return ggx1 * ggx2;
 }
 
-float FresnelSchlick(vec3 L, vec3 H, float ni) {
+float Fresnel(vec3 L, vec3 H, float ni) {
     const float n1 = 1.0;
     float n2 = ni;
     float n = n1 / n2;
@@ -448,7 +448,7 @@ vec3 Shade(Hit hit, Ray r, Material mat) {
         vec3 H = normalize(V + L);
         float NdotL = max(dot(N, L), 0.0);        
 
-        float F    = FresnelSchlick(L, H, mat.params.x);
+        float F    = Fresnel(L, H, mat.params.x);
         float NDF = DistributionGGX(N, H, mat.params.y);       
         float G   = GeometrySmith(N, V, L, mat.params.y);   
             
@@ -1153,7 +1153,7 @@ function initScene() {
         },
     
         samples : {
-            value : 2
+            value : 4
         },
 
         waterHeightScale : {

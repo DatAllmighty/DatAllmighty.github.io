@@ -23,7 +23,7 @@ const scene = new THREE.Scene()
 
 scene.add(new THREE.AxesHelper(5))
 const controls = new OrbitControls(camera, renderer.domElement)
-
+controls.enableZoom = false
 const stats = Stats()
 parent.appendChild(stats.dom)
 

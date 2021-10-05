@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css?family=Roboto');
-
+@import url('https://fonts.googleapis.com/css2?family=Anton');
 
 body {
     background-color: #000000;
@@ -9,7 +8,7 @@ body {
     background-attachment: fixed;
     width: 100%;
     height: 100%;
-    font-family: 'Roboto', 'sans';
+    font-family: 'Anton', sans-serif;
 }
 
 html {
@@ -20,6 +19,7 @@ html {
 #navbarNav {
     display: inline-block;
     align-items: center;
+    font-family: 'Anton', sans-serif !important;
 }
 
 .navbar{
