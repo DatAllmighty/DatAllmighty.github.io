@@ -371,7 +371,7 @@ vec2 rayToXZ(Ray r) {
 }
 
 //https://graphics.stanford.edu/courses/cs148-10-summer/docs/2006--degreve--reflection_refraction.pdf
-Ray refract(Ray r, vec3 p, Hit hit, float ni) {
+Ray refractRay(Ray r, vec3 p, Hit hit, float ni) {
     Ray ref;
     float n = 1.0 / ni;
     float cosI = -dot(hit.normal, r.direction);
@@ -450,68 +450,6 @@ bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, flo
 		mag += texelSize;
 		lastT = t;
 
-    }
-    return false;
-}
-
-bool TerrainIntersectionD(Ray r, float tmin, inout Hit h, inout Material mat) {
-    float t = 0.0;
-	float lastT = 0.0;
-	int maxIte = 100;
-
-	int ite = 0;
-    while(ite < maxIte) {
-        vec3 p = PointAtParameter(r,t);
-
-		vec2 texCoords = ((p.xz)/gridSize) * 0.5 + 0.5;
-   
-		if(texCoords.x > 1.0 || texCoords.x < 0.0 || texCoords.y > 1.0 || texCoords.y < 0.0) {
-			return false;
-		}
-        
-		float sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
-        float difference = abs(p.y - sampledHeight);
-
-        if(p.y < sampledHeight) {   
-			for(int i = 0; i < 10; i++) {
-				float tMid = 0.5*(lastT + t);
-				p = PointAtParameter(r,tMid);
-                texCoords = ((p.xz)/gridSize) * 0.5 + 0.5;
-                //sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
-
-                if( (p.y-sampledHeight) + ACCURACY_THRESH  < 0.0) {
-					t = tMid;
-				}
-				else if( (p.y-sampledHeight) + ACCURACY_THRESH > 0.0 ){
-					lastT = tMid;
-				}
-				else {
-					t = tMid;
-					break;
-				}
-			}   
-            if(t > h.t) {
-                return false;
-            }
-            h.t = t;
-            vec3 normal = texture(normalTex, texCoords).xzy;
-            normal = normalize(normal * 2.0f - 1.0f);
-            normal.z *= -1.0f;
-            h.normal = normal;
-            h.material = 0;
-
-            mat.diffuse_color = texture(diffuseTex, texCoords).rgb;
-            mat.specular_color = texture(diffuseTex, texCoords).rgb;
-            mat.reflective_color = vec3(0.0,0.0,0.0);
-            mat.transparent_color = vec3(0.0,0.0,0.0);
-            mat.params.x = 1.51;
-            mat.params.y = 1.0;
-            mat.params.z = 0.0;
-            return true;
-        }
-		ite++;
-		lastT = t;
-        t += difference * 0.5;
     }
     return false;
 }
@@ -759,7 +697,7 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
         
         
         if(sampledHeight < waterP.y) {
-            refR = refract(r, waterP, hit, waterMaterial.params.x);
+            refR = refractRay(r, waterP, hit, waterMaterial.params.x);
             refractionB = enableRefraction ? TerrainIntersection(refR, tmin, hRef, refractionMaterial, 2.0) && intersection : false;
         }
         

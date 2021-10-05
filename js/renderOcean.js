@@ -356,20 +356,6 @@ vec2 rayToXZ(Ray r) {
 	return normalize(vec2(r.direction.x,r.direction.z));
 }
 
-//https://graphics.stanford.edu/courses/cs148-10-summer/docs/2006--degreve--reflection_refraction.pdf
-Ray refract(Ray r, vec3 p, Hit hit, float ni) {
-    Ray ref;
-    float n = 1.0 / ni;
-    float cosI = -dot(hit.normal, r.direction);
-    float sinT2 = n * n * (1.0 - cosI * cosI);
-    float cosT = sqrt(1.0 - sinT2);
-    ref.origin = p;
-    ref.direction =  n * r.direction + (n * cosI - cosT) * hit.normal;
-    //Jump above the surface - modifies tmin limit
-    ref.origin = ref.origin - ref.direction * 0.1;
-    return ref;
-}
-
 bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
     float t;
 	float lastT = 0.0;
