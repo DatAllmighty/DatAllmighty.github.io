@@ -1437,11 +1437,16 @@ function render(time) {
     renderer.render(scene, renderCamera)
 }
 
-//Enter render loop
-initRendering()
-initScene()
-initComputeShaders()
-setWaterNoiseTextures()
-animate()
+
+
+window.addEventListener('load', onLoad, false)
+function onLoad() {
+    //Enter render loop
+    initRendering()
+    initScene()
+    initComputeShaders()
+    setWaterNoiseTextures()
+    animate()
+}
 
 

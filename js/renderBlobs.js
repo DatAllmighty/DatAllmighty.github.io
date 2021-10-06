@@ -1225,4 +1225,8 @@ function render(time) {
 	blobs = []
 }
 
-animate()
+window.addEventListener('load', onLoad, false)
+function onLoad() {
+	//Enter render loop
+	animate()
+}
