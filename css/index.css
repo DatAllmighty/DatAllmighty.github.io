@@ -87,6 +87,8 @@ h4 {
     justify-content:center;
     height: 50%;
     width: 70%;
+    max-width: 600px;
+    max-height: 600px;
 }
 
 #embedded-video-div iframe{
