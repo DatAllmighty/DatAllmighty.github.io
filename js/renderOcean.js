@@ -41,6 +41,7 @@ let idftComputeShader, normalComputeShader
 let horisontalSumTex, waterHeightTex, waterNormalTexture
 let waterUpdateInterval = 1.0/30.0
 let lastWaterUpdateTime = 0
+let waterCycleTime =  50.0;
 
 //Other scene & control parameters
 let camera, renderCamera, renderer, stats, scene, quad, controls, clock, gpuCompute, totalTime = 0.0, uniforms
@@ -119,7 +120,6 @@ struct Light
 	vec3 params;
 };
 
-//All materials have phong params
 struct Material
 {	
 	vec3 diffuse_color;
@@ -130,7 +130,6 @@ struct Material
     vec3 params;
 };
 
-//params_i (material, transform, null)
 struct Box
 {
 	vec3 vmin;
@@ -352,6 +351,10 @@ float solveForX(Ray r, float x) {
     return (x - r.origin.x)/r.direction.x; 
 }
 
+float solveForZ(Ray r, float z) {
+    return (z - r.origin.z)/r.direction.z; 
+}
+
 vec2 rayToXZ(Ray r) {
 	return normalize(vec2(r.direction.x,r.direction.z));
 }
@@ -362,10 +365,11 @@ bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
 	vec2 mag = vec2(0);
 	
 	vec2 texSpaceDir = rayToXZ(r);
-	vec2 texelSize = vec2(0.5) / vec2(textureSize(waterHeightTex, 0));
-	vec2 texSpacePosition = r.origin.xz;
+    vec2 textureSize = vec2(textureSize(waterHeightTex, 0));
+	vec2 texelSize = vec2(0.5) / textureSize;
+	vec2 texSpacePosition = r.origin.xz;    
 	float maxIte = max(1.0 / texelSize.x, 1.0 / texelSize.y);
-    
+
 	int ite = 0;
     while(ite < int(maxIte)) {
 		vec2 texCoords = ((texSpacePosition)/waterGridSize) * 0.5 + 0.5;
@@ -386,9 +390,13 @@ bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
         }        
         if(p.y < sampledHeight) {   
 			
+            //This would make the surface smoother - but for now the performance is more important.
+            /* 
             for(int i = 0; i < 8; i++) {
 				float tMid = 0.5*(lastT + t);
 				p = PointAtParameter(r,tMid);
+                texCoords = ((p.xz)/waterGridSize) * 0.5 + 0.5;
+                sampledHeight = waterHeightScale * texture(waterHeightTex, texCoords).r - waterHeightScale/2.0 + waterHeightOffset;
 
                 if( (p.y-sampledHeight)  < -ACCURACY_THRESH) {
 					t = tMid;
@@ -401,6 +409,7 @@ bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
 					break;
 				}
 			} 
+            */
 			if(t < tmin) {
 				return false;
 			}
@@ -414,7 +423,7 @@ bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
             mat.reflective_color = vec3(0.1,0.1,0.1);
             mat.transparent_color = vec3(0.0,0.0,0.0);
             mat.params.x = 1.33;
-            mat.params.y = 0.2;
+            mat.params.y = 0.1;
             mat.params.z = 0.0;
             return true;
         }
@@ -569,11 +578,13 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
 	vec3 ref_col = vec3(1.0f, 1.0f, 1.0f);
 	vec3 trans_col = vec3(1.0f, 1.0f, 1.0f);
 	const float maxDist = 45.0;
+    const float foamDist = 0.05;
     vec3 water_depth_col = vec3(6.0/255.0,66.0/255.0,115.0/255.0);
     float maxVisibleDepth = 1.0f;
     bool firstBounce = true;
     Hit hW, hT, hRef;
     Ray refR = r;
+    float waterT = FLT_MAX;
 
 	while (bounces >= 0) {
 		Material waterMaterial;
@@ -587,7 +598,7 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
 			hit = hW;
 			intersection = true;
 		}	
-      
+
 		if (intersection) {
             Material mat;
             if(waterMaterial.params.z > -0.1) {
@@ -597,7 +608,7 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
 				mat = materials[hit.material];
 			}
        
-            answer +=  ref_col * Shade(hit, r, mat);
+            answer += ref_col * Shade(hit, r, mat);
         
 			ref_col *= mat.reflective_color;
             
@@ -999,7 +1010,7 @@ function initComputeShaders() {
     hktVariable.material.uniforms[ "H0" ] = { value: H0Tex };
     hktVariable.material.uniforms[ "H0Conj" ] = { value: H0ConjTex };
     hktVariable.material.uniforms[ "t" ] = { value: 0 };
-    hktVariable.material.uniforms[ "tCycle" ] = { value: 20.0 };
+    hktVariable.material.uniforms[ "tCycle" ] = { value: waterCycleTime };
     
     const error = gpuCompute.init();
     if ( error !== null ) {
@@ -1026,7 +1037,7 @@ function initComputeShaders() {
 
 function runComputeShader(time) {
 
-    hktVariable.material.uniforms["t"].value  = time;
+    hktVariable.material.uniforms["t"].value  = time % waterCycleTime;
     gpuCompute.compute();
 
     idftComputeShader.uniforms['horizontal'].value = true
@@ -1153,7 +1164,7 @@ function initScene() {
         },
     
         samples : {
-            value : 4
+            value : 2
         },
 
         waterHeightScale : {

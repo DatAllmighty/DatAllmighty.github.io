@@ -25,7 +25,7 @@ const waterM = 256
 let waterA = 800
 let waterHeightOffset = 7
 let waterGridSize = 30
-
+let waterCycleTime =  50.0;
 
 //The water is based on Jerry Tessendorf's paper: https://people.cs.clemson.edu/~jtessen/reports/papers_files/coursenotes2004.pdf
 const waterL = new THREE.Vector2(64, 64);
@@ -125,7 +125,6 @@ struct Light
 	vec3 params;
 };
 
-//All materials have phong params
 struct Material
 {	
 	vec3 diffuse_color;
@@ -136,7 +135,6 @@ struct Material
     vec3 params;
 };
 
-//params_i (material, transform, null)
 struct Box
 {
 	vec3 vmin;
@@ -365,6 +363,10 @@ float solveForX(Ray r, float x) {
     return (x - r.origin.x)/r.direction.x; 
 }
 
+float solveForZ(Ray r, float z) {
+    return (z - r.origin.z)/r.direction.z; 
+}
+
 vec2 rayToXZ(Ray r) {
 	return normalize(vec2(r.direction.x,r.direction.z));
 }
@@ -384,7 +386,7 @@ Ray refractRay(Ray r, vec3 p, Hit hit, float ni) {
 }
 
 //Texture space intersection
-bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, float step) {
+bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, float step, int iteoverload) {
     float t;
 	float lastT = 0.0;
 	vec2 mag = vec2(0);
@@ -395,7 +397,7 @@ bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, flo
 	float maxIte = max(1.0 / texelSize.x, 1.0 / texelSize.y);
     
 	int ite = 0;
-    while(ite < int(maxIte)) {
+    while(ite < min(iteoverload, int(maxIte))) {
 		vec2 texCoords = ((texSpacePosition)/gridSize) * 0.5 + 0.5;
 		texCoords += mag * texSpaceDir;
    
@@ -408,27 +410,12 @@ bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, flo
 		//Note F(x,z) = y, x and z are on a line, so there is a direct mapping between x -> z
 		t = solveForX(r, texCoordInWorld.x);
 		vec3 p = PointAtParameter(r,t);
-        if(t > h.t) {
-            return false;
-        }
         if(p.y < sampledHeight) {   
-			
-            for(int i = 0; i < 4; i++) {
-				float tMid = 0.5*(lastT + t);
-				p = PointAtParameter(r,tMid);
 
-				if( (p.y-sampledHeight) < -ACCURACY_THRESH ) {
-					t = tMid;
-				}
-				else if( (p.y-sampledHeight) > ACCURACY_THRESH ){
-					lastT = tMid;
-				}
-				else{
-					t = tMid;
-					break;
-				}
-			}   
-            
+            if(t > h.t){
+                return false;
+            }  
+
             h.t = t;
             vec3 normal = texture(normalTex, texCoords).xzy;
             normal = normalize(normal * 2.0f - 1.0f);
@@ -441,7 +428,7 @@ bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, flo
             mat.reflective_color = vec3(0.0,0.0,0.0);
             mat.transparent_color = vec3(0.0,0.0,0.0);
             mat.params.x = 1.51;
-            mat.params.y = 1.0;
+            mat.params.y = 0.8;
             mat.params.z = 0.0;
             return true;
         }
@@ -453,7 +440,7 @@ bool TerrainIntersection(Ray r, float tmin, inout Hit h, inout Material mat, flo
     return false;
 }
 
-bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
+bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat, int iteoverload) {
     float t;
 	float lastT = 0.0;
 	vec2 mag = vec2(0);
@@ -464,10 +451,10 @@ bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
 	float maxIte = max(1.0 / texelSize.x, 1.0 / texelSize.y);
     
 	int ite = 0;
-    while(ite < int(maxIte)) {
+    while(ite < min(iteoverload, int(maxIte))) {
 		vec2 texCoords = ((texSpacePosition)/waterGridSize) * 0.5 + 0.5;
 		texCoords += mag * texSpaceDir;
-   
+        
 		if(texCoords.x > 1.0 || texCoords.x < 0.0 || texCoords.y > 1.0 || texCoords.y < 0.0) {
 			return false;
 		}
@@ -477,33 +464,19 @@ bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
 		//Note F(x,z) = y, x and z are on a line, so there is a direct mapping between x -> z
 		t = solveForX(r, texCoordInWorld.x);
 		vec3 p = PointAtParameter(r,t);
-
+        
         if(t > h.t){
             return false;
-        }        
+        }  
+              
         if(p.y < sampledHeight) {   
-			
-            for(int i = 0; i < 8; i++) {
-				float tMid = 0.5*(lastT + t);
-				p = PointAtParameter(r,tMid);
-
-                if( (p.y-sampledHeight)  < -ACCURACY_THRESH) {
-					t = tMid;
-				}
-				else if( (p.y-sampledHeight)  > ACCURACY_THRESH){
-					lastT = tMid;
-				}
-				else{
-					t = tMid;
-					break;
-				}
-			} 
 			if(t < tmin) {
 				return false;
 			}
             h.t = t;
             vec3 normal = texture(waterNormalTex, texCoords).xyz;
-            h.normal = normalize(normal);
+            //Normal is already normalized
+            h.normal = normal;
             h.material = 0;
 
             mat.diffuse_color = vec3(6.0/255.0,66.0/255.0,115.0/255.0);
@@ -511,7 +484,7 @@ bool WaterIntersection(Ray r, float tmin, inout Hit h, inout Material mat) {
             mat.reflective_color = vec3(0.1,0.1,0.1);
             mat.transparent_color = vec3(0.0,0.0,0.0);
             mat.params.x = 1.33;
-            mat.params.y = 0.2;
+            mat.params.y = 0.1;
             mat.params.z = 0.0;
             return true;
         }
@@ -681,29 +654,25 @@ vec3 RayTrace(Ray r, float tmin, int bounces, Hit hit) {
   
         //Intersect water
 		hW.t = FLT_MAX;
-		bool bW = WaterIntersection(r, tmin, hW, waterMaterial);
+		bool bW = WaterIntersection(r, tmin, hW, waterMaterial, 300);
 		if(bW && hW.t < hit.t) {
 			hit = hW;
 			intersection = true;
 		}	
         
-        hRef.t = FLT_MAX;
+        hRef.t = maxVisibleDepth + 1.0;
         vec3 waterP = PointAtParameter(r, hit.t);
         //Fetch height of terrain at the intersected point. If it is higher -> we trace water refraction otherwise normal
         vec2 texSpacePosition = waterP.xz;
         vec2 texCoords = ((texSpacePosition)/gridSize) * 0.5 + 0.5;
         float sampledHeight = heightScale * texture(heightTex, texCoords).r - heightScale/2.0;
         
-        
-        if(sampledHeight < waterP.y) {
-            refR = refractRay(r, waterP, hit, waterMaterial.params.x);
-            refractionB = enableRefraction ? TerrainIntersection(refR, tmin, hRef, refractionMaterial, 2.0) && intersection : false;
-        }
-        
+        refR = refractRay(r, waterP, hit, waterMaterial.params.x);
+        refractionB = enableRefraction ? TerrainIntersection(refR, tmin, hRef, refractionMaterial, 2.0, 100) && intersection : false;
           
         //Intersect terrain
         hT.t = FLT_MAX;
-        bool bT = TerrainIntersection(r, tmin, hT, terrainMaterial, 2.0);
+        bool bT = TerrainIntersection(r, tmin, hT, terrainMaterial, 2.0, 4096);
         if(bT && hT.t < hit.t) {
             hit = hT;
             intersection = true;
@@ -1024,7 +993,6 @@ function alias(x, N)
     return x
 }
 
-
 function fillTexture( texture, waterN, waterM, data) {
     const pixels = texture.image.data;
     for ( let j = 0; j < 4 * (waterN * waterM); j ++ ) {
@@ -1136,7 +1104,7 @@ function initComputeShaders() {
     hktVariable.material.uniforms[ "H0" ] = { value: H0Tex };
     hktVariable.material.uniforms[ "H0Conj" ] = { value: H0ConjTex };
     hktVariable.material.uniforms[ "t" ] = { value: 0 };
-    hktVariable.material.uniforms[ "tCycle" ] = { value: 20.0 };
+    hktVariable.material.uniforms[ "tCycle" ] = { value: waterCycleTime };
     
     const error = gpuCompute.init();
     if ( error !== null ) {
@@ -1163,7 +1131,7 @@ function initComputeShaders() {
 
 function runComputeShader(time) {
 
-    hktVariable.material.uniforms["t"].value  = time;
+    hktVariable.material.uniforms["t"].value  = time % waterCycleTime;
     gpuCompute.compute();
 
     idftComputeShader.uniforms['horizontal'].value = true
@@ -1283,7 +1251,7 @@ function initScene() {
         },
     
         camera_tmin : {
-            value : 0.01
+            value : 1.0
         },
     
         light_count : {
